@@ -85,6 +85,7 @@ body.dark-mode .nav-btn{color:#b2bed0}body.dark-mode .oct-stage{background:#2a36
 <div class="main">
 <div class="mobile-nav" id="mobileNav" aria-label="Mobile administrative navigation"></div>
 <header class="topbar">
+<h1 id="pageTitle" style="display:none">Visão geral</h1>
 <button type="button" class="btn secondary" id="hideMenu" title="Recolher menu" aria-label="Recolher menu">☰</button>
 <div class="user-info"><strong id="displayName"></strong><span id="displayEmail">Administrador · Orlando</span></div>
 <div class="header-clock"><div><span>Jornada encerrada</span><strong>00:00:00</strong></div><span class="journey-label">Sem jornada</span></div>
@@ -265,10 +266,18 @@ async function renderOctOverview(){
  if(studio)studio.onclick=()=>showPage("studiohistory");
 }
 function nav(){
- const mark=(p)=>'<button type="button" class="nav-btn" data-page="'+p.id+'" '+(p.id==="overview"?'aria-current="page"':'')+'><span class="nav-icon" aria-hidden="true">'+p.icon+'</span>'+safe(p.label)+'</button>';
- document.getElementById("desktopNav").innerHTML=pages.map(mark).join("");
+ const mark=p=>'<button type="button" class="nav-btn" data-page="'+p.id+'" '+(p.id==="overview"?'aria-current="page"':'')+'><span class="nav-icon" aria-hidden="true">'+p.icon+'</span>'+safe(p.label)+'</button>';
+ const primary=["overview","estimates","hours","production","customers","catalog","suppliers","finance","team","settings"];
+ const extra=pages.filter(p=>!primary.includes(p.id));
+ const desktop=document.getElementById("desktopNav");
+ desktop.innerHTML='<div style="color:#a1acbb;font-size:10px;letter-spacing:1.5px;padding:5px 12px">GESTÃO COMERCIAL</div>'+
+ primary.map(id=>mark(pages.find(p=>p.id===id))).join("")+
+ '<button type="button" class="nav-btn" id="newEstimateSidebar" style="color:#e32183">+ Novo estimate</button>'+
+ '<details class="oct-advanced-nav" style="margin-top:7px"><summary style="font-size:11px;cursor:pointer;color:#78869b;padding:12px">Mais módulos e histórico</summary><div style="display:grid;gap:2px">'+extra.map(mark).join("")+'</div></details>';
  document.getElementById("mobileNav").innerHTML=pages.map(mark).join("");
  document.querySelectorAll("[data-page]").forEach(b=>b.addEventListener("click",()=>showPage(b.dataset.page)));
+ const create=document.getElementById("newEstimateSidebar");
+ if(create)create.onclick=()=>{showPage("estimates");setTimeout(()=>document.querySelector("#newEntry")?.click(),400)};
 }
 function showPage(id){
  if(!pages.some(p=>p.id===id))id="overview";
