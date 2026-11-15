@@ -48,11 +48,13 @@ const pages=[
 {id:"overview",label:"Overview",icon:"◫"},
 {id:"estimates",label:"Estimates",icon:"▤"},
 {id:"orders",label:"Orders",icon:"▣"},
+{id:"items",label:"Order items",icon:"▦"},
 {id:"customers",label:"Customers",icon:"♧"},
 {id:"artwork",label:"Artwork approvals",icon:"✎"},
 {id:"production",label:"Production",icon:"◷"},
 {id:"payments",label:"Payments",icon:"＄"},
 {id:"team",label:"Team",icon:"♙"},
+{id:"migration",label:"Import / Export",icon:"⇅"},
 {id:"settings",label:"Settings",icon:"⚙"}
 ];
 const gate=document.getElementById("gate"),app=document.getElementById("app");
@@ -60,6 +62,8 @@ const client=window.supabase?.createClient(SUPABASE_URL,SUPABASE_PUBLIC_KEY,{aut
 let currentUser=null,profile=null;
 const safe=(s)=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const moduleDesc={
+items:["Order Items","Manage garment styles, sizes, printing positions and quantities.","Order items tied to existing orders."],
+migration:["Import / Export","Move historical records and create backups.","Prepare data for migration."],
 estimates:["Estimates","Review customer quote requests, garment selections, pricing and approvals.","Estimate records will be connected after the existing ChatGPT Sites data is mapped and admin access policies are deployed."],
 orders:["Orders","Manage confirmed orders and customer-facing order status.","Order listing is intentionally disabled until protected administrative access and migration are completed."],
 customers:["Customers","Manage customer profiles and organization details.","Customer records remain protected. The upcoming backend must verify the admin role before serving them."],
@@ -81,7 +85,7 @@ function showPage(id){
  document.getElementById("pageTitle").textContent=pages.find(p=>p.id===id).label;
  let content;
  if(id==="overview"){
- content='<section class="hero"><div><span class="pill preview">SECURE DEVELOPMENT PREVIEW</span><h2>Welcome, '+safe(profile.full_name||currentUser.email)+'</h2><p>Your administrative identity has been verified. Live read-only data is loaded through Supabase with row-level security. Changes remain disabled until the protected write layer is implemented.</p></div></section>'+
+ content='<section class="hero"><div><span class="pill preview">SECURE DEVELOPMENT PREVIEW</span><h2>Welcome, '+safe(profile.full_name||currentUser.email)+'</h2><p>Your administrative identity has been verified. Live read-only data is loaded through Supabase with row-level security. Authorized admins can manage records; PayPal payment verification remains server-controlled.</p></div></section>'+
  '<div class="stats">'+["Active orders","Estimates awaiting review","Artwork approvals","Production deadlines"].map(k=>'<div class="stat"><span>'+k+'</span><strong>—</strong><small>Live reporting not connected</small></div>').join("")+'</div>'+
  '<div class="cols"><section class="panel"><h3>Commercial workflow</h3><div class="module-items">'+[
  ["Quote request","Customer selects products and uploads artwork"],
@@ -90,70 +94,174 @@ function showPage(id){
  ["Production & fulfillment","Garments, DTF, delivery and tracking"]
  ].map(x=>'<div class="module-item"><span>'+x[0]+'</span><small>'+x[1]+'</small></div>').join("")+'</div></section>'+
  '<section class="panel"><h3>Migration readiness</h3><div class="module-items">'+[
- ["Supabase Auth","Connected"],["Administrator identity","Verified"],["Customer RLS","Configured, tests pending"],["Admin read permissions","Configured"],["Historical order migration","Pending"],["PayPal/Resend server integrations","Pending"]
+ ["Supabase Auth","Connected"],["Administrator identity","Verified"],["Customer RLS","Configured, tests pending"],["Admin data permissions","Read/write configured"],["Historical order migration","Pending"],["PayPal/Resend server integrations","Pending"]
  ].map(x=>'<div class="module-item"><span>'+x[0]+'</span><small>'+x[1]+'</small></div>').join("")+'</div></section></div>'+
- '<div class="notice"><strong>Data protection:</strong> This preview reads records with your authenticated Supabase session and RLS. It cannot edit payments, orders or customer data. The original ChatGPT Sites dashboard remains unchanged.</div>';
+ '<div class="notice"><strong>Data protection:</strong> This dashboard uses your authenticated Supabase session and administrative RLS. Payment verification is read only until verified server-side PayPal integration is completed. The legacy ChatGPT Sites dashboard remains unchanged.</div>';
  }else{
  const d=moduleDesc[id];
  content='<div class="section-head"><h2>'+safe(d[0])+'</h2><p>'+safe(d[1])+'</p></div>'+
  '<section class="panel placeholder"><div><div class="placeholder-icon" aria-hidden="true">◫</div><strong>Module prepared</strong><p>'+safe(d[2])+'</p><p><span class="pill pending">Awaiting secure integration</span></p></div></section>';
  }
- document.getElementById("content").innerHTML=content+'<p class="footer-note">OCT Dashboard · Development environment · Read-only Supabase connection</p>';
+ document.getElementById("content").innerHTML=content+'<p class="footer-note">OCT Dashboard · Development environment · Supabase management connected</p>';
  history.replaceState(null,"","#"+id);
  loadReadOnlyData(id);
 }
 
+
 let loadRevision=0;
-const readConfigs={
- customers:{table:"customers",columns:[["name","Customer"],["company","Company"],["email","Email"],["phone","Phone"]],select:"id,name,company,email,phone,created_at",sort:"created_at"},
- estimates:{table:"estimates",columns:[["estimate_number","Estimate"],["status","Status"],["total","Total (USD)"],["created_at","Created"]],select:"id,estimate_number,status,total,created_at",sort:"created_at"},
- orders:{table:"orders",columns:[["order_number","Order"],["status","Status"],["total","Total (USD)"],["due_date","Due date"],["created_at","Created"]],select:"id,order_number,status,total,due_date,created_at",sort:"created_at"},
- artwork:{table:"artworks",columns:[["position","Position"],["approval_status","Approval"],["order_id","Order ID"],["created_at","Created"]],select:"id,position,approval_status,order_id,created_at",sort:"created_at"},
- production:{table:"orders",columns:[["order_number","Order"],["status","Status"],["production_started_at","Production started"],["due_date","Due date"]],select:"id,order_number,status,production_started_at,due_date,created_at",sort:"created_at"},
- payments:{table:"payments",columns:[["provider","Provider"],["status","Status"],["amount","Amount (USD)"],["paid_at","Paid"],["created_at","Created"]],select:"id,provider,status,amount,paid_at,created_at",sort:"created_at"}
+const registry={
+ customers:{table:"customers",fields:[["name","Customer name","text",true],["company","Company","text"],["email","Email","email"],["phone","Phone","text"],["address","Address","text"]],columns:[["name","Customer"],["company","Company"],["email","Email"],["phone","Phone"]]},
+ estimates:{table:"estimates",fields:[["estimate_number","Estimate number","text"],["customer_id","Customer","customers",true],["status","Status","text"],["subtotal","Subtotal","number"],["tax","Tax","number"],["shipping","Shipping","number"],["total","Total","number"],["notes","Notes","textarea"]],columns:[["estimate_number","Estimate"],["status","Status"],["total","Total"],["created_at","Created"]]},
+ orders:{table:"orders",fields:[["order_number","Order number","text"],["customer_id","Customer","customers",true],["estimate_id","Related estimate","estimates"],["status","Status","select:received|awaiting_approval|payment_pending|production|completed|delivered|cancelled"],["total","Total","number"],["due_date","Due date","date"],["tracking_number","Tracking number","text"]],columns:[["order_number","Order"],["status","Status"],["total","Total"],["due_date","Due"]]},
+ items:{table:"order_items",fields:[["order_id","Order","orders",true],["product_name","Product","text",true],["brand","Brand","text"],["style","Style","text"],["color","Color","text"],["size","Size","text"],["quantity","Quantity","integer",true],["unit_price","Unit price","number"],["print_front","Front DTF","checkbox"],["print_back","Back DTF","checkbox"]],columns:[["product_name","Product"],["brand","Brand"],["style","Style"],["size","Size"],["quantity","Qty"],["unit_price","Unit price"]]},
+ artwork:{table:"artworks",fields:[["order_id","Order","orders",true],["position","Position","select:front|back|left_chest|sleeve|other"],["storage_path","Storage path","text"],["approval_status","Approval","select:pending|approved|rejected"]],columns:[["position","Position"],["approval_status","Approval"],["order_id","Order ID"],["created_at","Created"]]},
+ production:{table:"orders",fields:[["status","Status","select:received|awaiting_approval|payment_pending|production|completed|delivered|cancelled"],["production_started_at","Production started","datetime-local"],["due_date","Due date","date"],["completed_at","Completed","datetime-local"],["tracking_number","Tracking number","text"]],columns:[["order_number","Order"],["status","Status"],["production_started_at","Started"],["due_date","Due"],["tracking_number","Tracking"]]},
+ payments:{table:"payments",fields:[],columns:[["provider","Provider"],["status","Status"],["amount","Amount"],["paid_at","Paid"],["order_id","Order ID"]]},
+ team:{table:"profiles",fields:[],columns:[["full_name","Name"],["role","Role"],["created_at","Created"]]}
 };
-const money=n=>typeof n==="number"?new Intl.NumberFormat("en-US",{style:"currency",currency:"USD"}).format(n):safe(n);
-const printable=(k,v)=>v===null||v===undefined||v===""?"—":(k==="total"||k==="amount")?money(Number(v)):(k.includes("_at")||k==="due_date")?safe(new Date(v).toLocaleDateString("en-US",{timeZone:"UTC"})):safe(v);
+const dollar=new Intl.NumberFormat("en-US",{style:"currency",currency:"USD"});
+const formatValue=(key,value)=>{
+ if(value===null||value===undefined||value==="")return "—";
+ if(["total","amount","subtotal","tax","shipping","unit_price"].includes(key))return dollar.format(Number(value));
+ if(typeof value==="boolean")return value?"Yes":"No";
+ if(key==="due_date"||key.endsWith("_at")){const d=new Date(value);return Number.isNaN(+d)?safe(value):safe(d.toLocaleDateString("en-US",{timeZone:"UTC"}))}
+ return safe(value);
+};
+function alertIn(target,text,isError){
+ const el=document.createElement("div");el.style.cssText="padding:11px 14px;border-radius:8px;margin:12px 0;background:"+(isError?"#fff2f2":"#eaf8ee")+";color:"+(isError?"#9b2633":"#146c3c");el.textContent=text;
+ target.prepend(el);
+}
+function fieldInput(field,value,lookup){
+ const [name,title,type,required]=field;
+ const id="f-"+name;const val=value??"";
+ const prefix='<label style="display:block;font-size:12px;font-weight:600;margin:11px 0 5px" for="'+id+'">'+safe(title)+(required?" *":"")+'</label>';
+ const common=' id="'+id+'" name="'+name+'" '+(required?"required":"")+' style="width:100%;padding:11px;border:1px solid #d6dfeb;border-radius:8px;background:white;color:#15243a" ';
+ if(type==="textarea")return prefix+'<textarea '+common+' rows="3">'+safe(val)+'</textarea>';
+ if(type==="checkbox")return prefix+'<input type="checkbox" name="'+name+'" id="'+id+'" '+(val?"checked":"")+' style="width:20px;height:20px">';
+ if(type.startsWith("select:")){
+ const opts=type.slice(7).split("|");
+ return prefix+'<select '+common+'>'+opts.map(x=>'<option value="'+safe(x)+'" '+(x===val?"selected":"")+'>'+safe(x.replaceAll("_"," "))+'</option>').join("")+'</select>';
+ }
+ if(["customers","orders","estimates"].includes(type)){
+ const choices=lookup[type]||[];
+ return prefix+'<select '+common+'><option value="">Select...</option>'+choices.map(x=>{
+ let label=type==="customers"?(x.company||x.name):(type==="orders"?(x.order_number||x.id):(x.estimate_number||x.id));
+ return '<option value="'+safe(x.id)+'" '+(x.id===val?"selected":"")+'>'+safe(label)+'</option>';
+ }).join("")+'</select>';
+ }
+ const number=(type==="number"||type==="integer");
+ return prefix+'<input '+common+' type="'+type+'" '+(number?'min="0" step="'+(type==="integer"?"1":"0.01")+'"':"")+' value="'+safe(type==="datetime-local"&&val?String(val).slice(0,16):val)+'">';
+}
+async function getLookup(){
+ const pairs=[["customers","id,name,company"],["orders","id,order_number"],["estimates","id,estimate_number"]];
+ const entries=await Promise.all(pairs.map(async ([name,cols])=>{
+ const {data,error}=await client.from(name).select(cols).order("created_at",{ascending:false}).limit(500);
+ return [name,error?[]:(data||[])];
+ }));
+ return Object.fromEntries(entries);
+}
+function closeEditor(){
+ const modal=document.getElementById("recordEditor");if(modal)modal.remove();
+}
+async function showEditor(page,existing){
+ const cfg=registry[page];if(!cfg||!cfg.fields.length)return;
+ const lookup=await getLookup();
+ closeEditor();
+ const overlay=document.createElement("div");overlay.id="recordEditor";overlay.style.cssText="position:fixed;inset:0;z-index:200;background:#091a35b5;display:flex;align-items:center;justify-content:center;padding:20px;overflow:auto";
+ const box=document.createElement("section");box.style.cssText="background:#fff;border-radius:16px;padding:25px;width:min(560px,100%);max-height:90vh;overflow:auto;box-shadow:0 20px 60px #091a3535";
+ box.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center"><h2 style="font-size:21px;margin:0">'+(existing?"Edit":"Add")+" "+safe(page==="items"?"order item":page==="production"?"production record":page.slice(0,-1))+'</h2><button type="button" id="dismiss" class="btn secondary">Close</button></div>'+
+ '<p style="color:#64748b;font-size:13px">All changes are stored in Supabase. Do not mark PayPal payments as verified here.</p>'+
+ '<form id="entryForm">'+cfg.fields.map(f=>fieldInput(f,existing?.[f[0]],lookup)).join("")+
+ '<div style="display:flex;gap:9px;margin-top:20px"><button class="btn" type="submit">Save record</button><button class="btn secondary" type="button" id="cancelForm">Cancel</button></div><div id="formMessage" role="status"></div></form>';
+ overlay.append(box);document.body.append(overlay);
+ const exit=()=>closeEditor();
+ box.querySelector("#dismiss").onclick=exit;box.querySelector("#cancelForm").onclick=exit;
+ overlay.addEventListener("click",e=>{if(e.target===overlay)exit()});
+ box.querySelector("form").onsubmit=async e=>{
+ e.preventDefault();const form=e.target;const button=form.querySelector('button[type="submit"]');button.disabled=true;
+ const payload={};
+ for(const [name,,type,required] of cfg.fields){
+ const input=form.elements.namedItem(name);
+ let value=type==="checkbox"?input.checked:input.value.trim();
+ if(value===""&&!required){if(existing)payload[name]=null;continue}
+ if(type==="number"||type==="integer"){value=Number(value);if(!Number.isFinite(value)||value<0||type==="integer"&&!Number.isInteger(value)){alertIn(box,"Invalid numeric value: "+name,true);button.disabled=false;return}}
+ if(type==="datetime-local"&&value)value=new Date(value).toISOString();
+ payload[name]=value;
+ }
+ if(page==="production"&&payload.status==="production"&&!payload.production_started_at&&!existing?.production_started_at){
+ payload.production_started_at=new Date().toISOString();
+ }
+ const action=existing?client.from(cfg.table).update(payload).eq("id",existing.id):client.from(cfg.table).insert(payload);
+ const {error}=await action;
+ if(error){alertIn(box,"Unable to save: "+error.message,true);button.disabled=false;return}
+ closeEditor();loadReadOnlyData(page);
+ };
+}
 async function loadReadOnlyData(pageId){
  const revision=++loadRevision;
+ if(pageId==="migration"){showMigration();return;}
+ if(pageId==="settings"){const el=document.querySelector("#content .placeholder");if(el){el.innerHTML='<div><h3>Integration status</h3><p>Supabase: connected. Resend: SMTP configured in Supabase Auth. PayPal: server-side verification not migrated yet. GitHub Pages: hosting test environment.</p><p>Never paste API secrets into browser code or GitHub.</p><p><a href="https://sr-lhama.github.io/oct-auth-preview/portal.html" target="_blank" rel="noopener">Open customer portal ↗</a></p></div>'}return}
  if(pageId==="overview"){
-  const specs=[
-   {table:"orders",label:"Orders in Supabase"},
-   {table:"estimates",label:"Estimates in Supabase"},
-   {table:"customers",label:"Customers in Supabase"},
-   {table:"artworks",label:"Artworks in Supabase"}
-  ];
-  const results=await Promise.all(specs.map(async spec=>{
-   const {count,error}=await client.from(spec.table).select("id",{head:true,count:"exact"});
-   return {...spec,count,error};
-  }));
-  if(revision!==loadRevision||location.hash!=="#overview")return;
-  const stats=document.querySelector(".stats");
-  if(!stats)return;
-  stats.innerHTML=results.map(r=>'<div class="stat"><span>'+safe(r.label)+'</span><strong>'+ (r.error?"—":String(r.count??0))+'</strong><small>'+ (r.error?"Unable to load: "+safe(r.error.message):"Live, read-only Supabase data")+'</small></div>').join("");
-  return;
+ const specs=[["orders","Orders"],["estimates","Estimates"],["customers","Customers"],["artworks","Artwork"]];
+ const results=await Promise.all(specs.map(async ([table,label])=>{
+ const {count,error}=await client.from(table).select("id",{head:true,count:"exact"});
+ return {label,count,error};
+ }));
+ if(revision!==loadRevision||location.hash!=="#overview")return;
+ const el=document.querySelector(".stats");if(el)el.innerHTML=results.map(x=>'<div class="stat"><span>'+safe(x.label)+'</span><strong>'+(x.error?"—":String(x.count??0))+'</strong><small>'+(x.error?safe(x.error.message):"Live Supabase total")+'</small></div>').join("");
+ return;
  }
- const cfg=readConfigs[pageId];if(!cfg)return;
+ const cfg=registry[pageId];if(!cfg)return;
  const slot=document.querySelector("#content .placeholder");
- if(slot)slot.innerHTML='<div><strong>Loading live records...</strong><p>Reading your Supabase data with the administrator session.</p></div>';
- const {data,error}=await client.from(cfg.table).select(cfg.select).order(cfg.sort,{ascending:false}).limit(50);
+ if(slot)slot.innerHTML='<div><strong>Loading '+safe(pageId)+'...</strong></div>';
+ const {data,error}=await client.from(cfg.table).select("*").order("created_at",{ascending:false}).limit(100);
  if(revision!==loadRevision||location.hash!=="#"+pageId)return;
  const target=document.querySelector("#content .placeholder");if(!target)return;
- target.classList.remove("placeholder");
- if(error){
-  target.innerHTML='<h3>Unable to read records</h3><p>'+safe(error.message)+'</p>';
-  return;
- }
- if(!data||data.length===0){
-  target.innerHTML='<h3>No records in this Supabase table yet</h3><p>Your previous ChatGPT Sites orders have not been migrated. No sample data has been added.</p>';
-  return;
- }
- const head=cfg.columns.map(c=>'<th scope="col">'+safe(c[1])+'</th>').join("");
- const rows=data.map(rec=>'<tr>'+cfg.columns.map(c=>'<td>'+printable(c[0],rec[c[0]])+'</td>').join("")+'</tr>').join("");
- target.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:15px"><h3 style="margin:0">Supabase records</h3><span class="pill pending">Read only · First 50</span></div><div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;text-align:left;font-size:13px"><thead><tr>'+head+'</tr></thead><tbody>'+rows+'</tbody></table></div>';
- target.querySelectorAll("th,td").forEach(el=>{el.style.padding="13px 10px";el.style.borderBottom="1px solid #e4e9f1"});
+ target.classList.remove("placeholder");target.style.cssText="display:block;text-align:left;min-height:180px";
+ if(error){target.innerHTML='<h3>Access error</h3><p>'+safe(error.message)+'</p>';return}
+ const rows=data||[];
+ const addable=cfg.fields.length&&pageId!=="production";
+ const toolbar='<div style="display:flex;align-items:center;flex-wrap:wrap;justify-content:space-between;gap:12px;margin-bottom:16px"><div><h3 style="margin:0">Supabase records</h3><p style="margin:5px 0">Showing '+rows.length+' most recent records</p></div>'+(addable?'<button id="newEntry" class="btn" type="button">+ New record</button>':"")+'</div>';
+ const heads=cfg.columns.map(([k,l])=>'<th>'+safe(l)+'</th>').join("")+'<th>Action</th>';
+ const line=rows.map((rec,i)=>'<tr>'+cfg.columns.map(([key])=>'<td>'+formatValue(key,rec[key])+'</td>').join("")+'<td>'+(cfg.fields.length?'<button type="button" class="btn secondary editRecord" data-index="'+i+'" style="padding:8px 11px;font-size:12px">Edit</button>':'<span style="color:#64748b">Read only</span>')+'</td></tr>').join("");
+ target.innerHTML=toolbar+(rows.length?'<div style="overflow-x:auto"><table class="data-table" style="width:100%;border-collapse:collapse;font-size:13px;text-align:left"><thead><tr>'+heads+'</tr></thead><tbody>'+line+'</tbody></table></div>':'<p>No records yet. The legacy dataset is not present in Supabase.</p>');
+ target.querySelectorAll("th,td").forEach(n=>{n.style.padding="12px 10px";n.style.borderBottom="1px solid #e3e9f2"});
+ if(addable)target.querySelector("#newEntry").onclick=()=>showEditor(pageId,null);
+ target.querySelectorAll(".editRecord").forEach(n=>n.onclick=()=>showEditor(pageId,rows[Number(n.dataset.index)]));
 }
-
+function csvEncode(rows){
+ if(!rows.length)return "";
+ const columns=Object.keys(rows[0]);
+ const quote=x=>'"'+String(x??"").replaceAll('"','""')+'"';
+ return [columns.map(quote).join(","),...rows.map(row=>columns.map(k=>quote(typeof row[k]==="object"?JSON.stringify(row[k]):row[k])).join(","))].join("\r\n");
+}
+function downloadFile(filename,contents,type){
+ const blob=new Blob([contents],{type});const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=filename;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+}
+function showMigration(){
+ const el=document.querySelector("#content .placeholder");if(!el)return;
+ el.classList.remove("placeholder");el.style.cssText="display:block;text-align:left";
+ el.innerHTML='<h3>Export current Supabase data</h3><p>Download an authenticated JSON backup of the new database. This does not export the old ChatGPT Sites database.</p><button id="exportJson" class="btn">Export JSON</button><p id="exportStatus"></p>'+
+ '<hr style="margin:25px 0;border:0;border-top:1px solid #e2e8f0"><h3>Legacy migration</h3><p>The previous dashboard is behind OpenAI authentication and cannot be read by this integration. Source records must be obtained first. The migration will preserve customer/order identifiers, artwork associations and payments; no empty records will be substituted.</p>'+
+ '<p style="font-size:13px"><strong>Accepted next input:</strong> a JSON or CSV export from the old dashboard, or its original database/API export. Do not upload secrets or payment credentials.</p><a href="https://estimate.sryama.chatgpt.site/dashboard" target="_blank" rel="noopener">Open original dashboard ↗</a>';
+ el.querySelector("#exportJson").onclick=async()=>{
+  const status=el.querySelector("#exportStatus");status.textContent="Preparing authenticated export...";
+  const result={exported_at:new Date().toISOString(),source:"supabase_oct",tables:{}};
+  for(const table of ["customers","estimates","orders","order_items","artworks","order_status_history","payments","profiles"]){
+   let all=[],from=0,error=null;
+   while(true){
+    const r=await client.from(table).select("*").range(from,from+499);
+    if(r.error){error=r.error;break}
+    all.push(...r.data);if(r.data.length<500)break;
+    from+=500;if(from>100000){error={message:"Export limit reached"};break}
+   }
+   if(error){status.textContent="Export cancelled: "+table+" - "+error.message;return}
+   result.tables[table]=all;
+  }
+  downloadFile("oct-supabase-backup-"+new Date().toISOString().slice(0,10)+".json",JSON.stringify(result,null,2),"application/json");
+  status.textContent="Supabase backup downloaded.";
+ };
+}
 function showGate(title,detail,allowLogin){
  gate.hidden=false;app.hidden=true;
  document.getElementById("gateTitle").textContent=title;
