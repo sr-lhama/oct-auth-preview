@@ -117,31 +117,28 @@
         { auth: { flowType: "pkce" } }
       );
 
-      async function initialize() {
-        try {
-          const code = new URLSearchParams(
-            window.location.search
-          ).get("code");
+    
+async function initialize() {
+  try {
+    const { data, error } = await client.auth.getUser();
 
-          if (code) {
-            const { error } =
-              await client.auth.exchangeCodeForSession(code);
-            if (error) throw error;
-            history.replaceState({}, "", window.location.pathname);
-          }
+    if (error) {
+      throw error;
+    }
 
-          const { data } = await client.auth.getUser();
-          if (data.user) {
-            message.textContent =
-              "Signed in successfully as " + data.user.email;
-            form.hidden = true;
-          }
-        } catch (error) {
-          message.textContent =
-            "Sign-in could not be completed. Please try again.";
-        }
-      }
+    if (data.user) {
+      message.textContent =
+        "Signed in successfully as " + data.user.email;
 
+      form.hidden = true;
+    }
+  } catch (error) {
+    console.error("Authentication error:", error);
+
+    message.textContent =
+      "Sign-in could not be completed. Please try again.";
+  }
+}
       form.addEventListener("submit", async (event) => {
         event.preventDefault();
         button.disabled = true;
