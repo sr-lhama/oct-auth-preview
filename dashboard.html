@@ -90,7 +90,7 @@ function showPage(id){
  ["Production & fulfillment","Garments, DTF, delivery and tracking"]
  ].map(x=>'<div class="module-item"><span>'+x[0]+'</span><small>'+x[1]+'</small></div>').join("")+'</div></section>'+
  '<section class="panel"><h3>Migration readiness</h3><div class="module-items">'+[
- ["Supabase Auth","Connected"],["Administrator identity","Verified"],["Customer RLS","Enabled for own data"],["Admin read permissions","Configured"],["Historical order migration","Pending"],["PayPal/Resend server integrations","Pending"]
+ ["Supabase Auth","Connected"],["Administrator identity","Verified"],["Customer RLS","Configured, tests pending"],["Admin read permissions","Configured"],["Historical order migration","Pending"],["PayPal/Resend server integrations","Pending"]
  ].map(x=>'<div class="module-item"><span>'+x[0]+'</span><small>'+x[1]+'</small></div>').join("")+'</div></section></div>'+
  '<div class="notice"><strong>Data protection:</strong> This preview reads records with your authenticated Supabase session and RLS. It cannot edit payments, orders or customer data. The original ChatGPT Sites dashboard remains unchanged.</div>';
  }else{
@@ -105,12 +105,15 @@ function showPage(id){
 
 let loadRevision=0;
 const readConfigs={
- customers:{columns:[["name","Customer"],["company","Company"],["email","Email"],["phone","Phone"]],select:"id,name,company,email,phone,created_at",sort:"created_at"},
- estimates:{columns:[["estimate_number","Estimate"],["status","Status"],["total","Total (USD)"],["created_at","Created"]],select:"id,estimate_number,status,total,created_at",sort:"created_at"},
- orders:{columns:[["order_number","Order"],["status","Status"],["total","Total (USD)"],["due_date","Due date"],["created_at","Created"]],select:"id,order_number,status,total,due_date,created_at",sort:"created_at"}
+ customers:{table:"customers",columns:[["name","Customer"],["company","Company"],["email","Email"],["phone","Phone"]],select:"id,name,company,email,phone,created_at",sort:"created_at"},
+ estimates:{table:"estimates",columns:[["estimate_number","Estimate"],["status","Status"],["total","Total (USD)"],["created_at","Created"]],select:"id,estimate_number,status,total,created_at",sort:"created_at"},
+ orders:{table:"orders",columns:[["order_number","Order"],["status","Status"],["total","Total (USD)"],["due_date","Due date"],["created_at","Created"]],select:"id,order_number,status,total,due_date,created_at",sort:"created_at"},
+ artwork:{table:"artworks",columns:[["position","Position"],["approval_status","Approval"],["order_id","Order ID"],["created_at","Created"]],select:"id,position,approval_status,order_id,created_at",sort:"created_at"},
+ production:{table:"orders",columns:[["order_number","Order"],["status","Status"],["production_started_at","Production started"],["due_date","Due date"]],select:"id,order_number,status,production_started_at,due_date,created_at",sort:"created_at"},
+ payments:{table:"payments",columns:[["provider","Provider"],["status","Status"],["amount","Amount (USD)"],["paid_at","Paid"],["created_at","Created"]],select:"id,provider,status,amount,paid_at,created_at",sort:"created_at"}
 };
 const money=n=>typeof n==="number"?new Intl.NumberFormat("en-US",{style:"currency",currency:"USD"}).format(n):safe(n);
-const printable=(k,v)=>v===null||v===undefined||v===""?"—":k==="total"?money(Number(v)):k.includes("_at")?safe(new Date(v).toLocaleDateString("en-US")):safe(v);
+const printable=(k,v)=>v===null||v===undefined||v===""?"—":(k==="total"||k==="amount")?money(Number(v)):(k.includes("_at")||k==="due_date")?safe(new Date(v).toLocaleDateString("en-US",{timeZone:"UTC"})):safe(v);
 async function loadReadOnlyData(pageId){
  const revision=++loadRevision;
  if(pageId==="overview"){
@@ -133,7 +136,7 @@ async function loadReadOnlyData(pageId){
  const cfg=readConfigs[pageId];if(!cfg)return;
  const slot=document.querySelector("#content .placeholder");
  if(slot)slot.innerHTML='<div><strong>Loading live records...</strong><p>Reading your Supabase data with the administrator session.</p></div>';
- const {data,error}=await client.from(pageId).select(cfg.select).order(cfg.sort,{ascending:false}).limit(50);
+ const {data,error}=await client.from(cfg.table).select(cfg.select).order(cfg.sort,{ascending:false}).limit(50);
  if(revision!==loadRevision||location.hash!=="#"+pageId)return;
  const target=document.querySelector("#content .placeholder");if(!target)return;
  target.classList.remove("placeholder");
