@@ -126,12 +126,34 @@ async function initialize() {
       throw error;
     }
 
-    if (data.user) {
-      message.textContent =
-        "Signed in successfully as " + data.user.email;
+   
+if (data.user) {
+  const { data: profile, error: profileError } = await client
+    .from("profiles")
+    .select("role, full_name")
+    .eq("id", data.user.id)
+    .single();
 
-      form.hidden = true;
-    }
+  if (profileError) {
+    console.error("Profile lookup error:", profileError);
+    message.textContent =
+      "Signed in, but unable to verify account permissions.";
+    form.hidden = true;
+    return;
+  }
+
+  if (profile.role === "admin") {
+    message.textContent =
+      "Administrator access confirmed. Welcome, " +
+      (profile.full_name || data.user.email) + "!";
+  } else {
+    message.textContent =
+      "Signed in successfully as " + data.user.email;
+  }
+
+  form.hidden = true;
+}
+
   } catch (error) {
     console.error("Authentication error:", error);
 
