@@ -150,6 +150,45 @@ team:["Team","Manage employee access and internal workflows.","Employee role ass
 settings:["Settings","Configure operational preferences and integrations.","SMTP credentials, PayPal secrets and service role keys must stay on protected server infrastructure."]
 };
 
+
+let octActiveShift=null,octTicker=null;
+const octClockFmt=n=>{n=Math.max(0,Math.floor(n));return [Math.floor(n/3600),Math.floor((n%3600)/60),n%60].map(x=>String(x).padStart(2,"0")).join(":")};
+function updateOctClock(){
+ const label=document.querySelector(".header-clock>div>span");
+ const digits=document.querySelector(".header-clock strong");
+ const badge=document.querySelector(".journey-label");
+ const button=document.querySelector("#startShift");
+ if(!digits||!button)return;
+ if(!octActiveShift){
+  digits.textContent="00:00:00";
+  if(label)label.textContent="Jornada encerrada";
+  if(badge)badge.textContent="Sem jornada";
+  button.textContent="Iniciar jornada";
+  return;
+ }
+ const started=new Date(octActiveShift.started_at).getTime();
+ const now=Date.now();
+ const breakStart=octActiveShift.break_started_at?new Date(octActiveShift.break_started_at).getTime():0;
+ const breakSoFar=breakStart?Math.max(0,(now-breakStart)/1000):0;
+ const seconds=(now-started)/1000-(octActiveShift.total_break_seconds||0)-breakSoFar;
+ digits.textContent=octClockFmt(seconds);
+ if(label)label.textContent="Jornada em andamento";
+ if(badge)badge.textContent=breakStart?"Em pausa":"Trabalhando";
+ button.textContent=breakStart?"Retomar jornada":"Pausar jornada";
+}
+async function fetchOctClock(){
+ const {data,error}=await client.from("work_clock_sessions").select("id,started_at,ended_at,break_started_at,total_break_seconds").eq("user_id",currentUser.id).is("ended_at",null).maybeSingle();
+ if(error){console.error("Cannot read clock",error);return}
+ octActiveShift=data;updateOctClock();
+}
+async function octClockAction(action){
+ const btn=document.querySelector("#startShift");if(btn)btn.disabled=true;
+ const {data,error}=await client.rpc("oct_clock_action",{p_action:action});
+ if(btn)btn.disabled=false;
+ if(error){window.alert("Não foi possível registrar a jornada: "+error.message);return}
+ octActiveShift=data.ended_at?null:data;updateOctClock();
+ if(location.hash==="#hours")showPage("hours");
+}
 const OCT_STAGES=[
  ["generated","Gerado"],["sent","Enviado"],["waiting","Aguardando resposta"],
  ["artwork_approval","Aprovação da arte"],["awaiting_payment","Aguardando pagamento"],
@@ -554,6 +593,18 @@ async function showOriginalModule(page){
   area.innerHTML='<p>'+data.length+' imported records in <strong>'+safe(table)+'</strong>. '+safe(privacyHint)+'</p>'+body;
  }
  render(groups[0]);
+ if(page==="hours"){
+  const section=document.createElement("section");section.className="panel";section.style.marginBottom="18px";
+  section.innerHTML='<h3>Controle de jornada atual</h3><p>Início, pausa e encerramento registrados no Supabase. Os apontamentos antigos continuam disponíveis nas abas abaixo.</p><div id="liveShifts">Carregando jornadas...</div><div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px"><button class="btn" id="shiftIn" type="button">Iniciar jornada</button><button class="btn secondary" id="shiftPause" type="button">Pausar</button><button class="btn secondary" id="shiftResume" type="button">Retomar</button><button class="btn secondary" id="shiftOut" type="button">Encerrar jornada</button></div>';
+  slot.insertBefore(section,slot.firstChild);
+  const actions=[["shiftIn","in"],["shiftPause","pause"],["shiftResume","resume"],["shiftOut","out"]];
+  for(const [name,action] of actions)section.querySelector("#"+name).onclick=()=>octClockAction(action);
+  client.from("work_clock_sessions").select("started_at,ended_at,total_break_seconds").eq("user_id",currentUser.id).order("started_at",{ascending:false}).limit(30).then(({data,error})=>{
+   const target=section.querySelector("#liveShifts");
+   if(error){target.textContent=error.message;return}
+   target.innerHTML=data?.length?data.map(r=>'<p style="padding:9px;border-bottom:1px solid #e2e8f0">Início: '+safe(new Date(r.started_at).toLocaleString("pt-BR"))+' | Fim: '+safe(r.ended_at?new Date(r.ended_at).toLocaleString("pt-BR"):"Em andamento")+' | Pausas: '+octClockFmt(r.total_break_seconds)+'</p>').join(""):'<p>Nenhuma jornada nova registrada.</p>';
+  });
+ }
 }
 const legacyTableNames=["artwork_proofs","work_shifts","ledger","events","purchases","products","suppliers","work_messages","work_segments","studio_versions","work_profiles","paypal_webhook_events","estimates","purchase_events","notifications","work_tickets","customers","members","work_profile_history","config","artwork_files","purchase_payments","studio_proof_sets","work_presence","paypal_invoices","work_events"];
 async function showLegacyArchive(){
@@ -660,7 +711,10 @@ async function start(){
  const hidden=sidebar.style.display==="none";sidebar.style.display=hidden?"flex":"none";
  });
  document.getElementById("darkModeToggle")?.addEventListener("click",()=>document.body.classList.toggle("dark-mode"));
- document.getElementById("startShift")?.addEventListener("click",()=>showPage("hours"));
+ document.getElementById("startShift")?.addEventListener("click",()=>octClockAction(octActiveShift?(octActiveShift.break_started_at?"resume":"pause"):"in"));
+ fetchOctClock();
+ if(octTicker)clearInterval(octTicker);
+ octTicker=setInterval(updateOctClock,1000);
  ["workHoursNav","newEstimateNav","myOrdersNav","dashNav"].forEach(id=>{
  const el=document.getElementById(id);if(!el)return;
  el.addEventListener("click",ev=>{ev.preventDefault();showPage(({workHoursNav:"hours",newEstimateNav:"estimates",myOrdersNav:"orders",dashNav:"overview"})[id])});
