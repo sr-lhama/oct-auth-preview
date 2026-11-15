@@ -31,7 +31,7 @@ a{color:var(--pink);text-decoration:none}
 <section class="card" style="display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap"><div><div class="section-label">Your account</div><h1>Order tracking</h1><p id="welcome" style="margin:0"></p></div><button id="logout" class="secondary">Sign out</button></section>
 <section class="card"><h2>My orders</h2><div id="orders" role="status"><p>Loading your orders...</p></div></section>
 <section class="card"><h2>Artwork review status</h2><div id="artworks"><p>Loading artwork details...</p></div></section>
-<section class="card"><h2>Need assistance?</h2><p>For changes, artwork approvals or questions about a delivery, contact <a href="mailto:order@orlandocustomtees.com">order@orlandocustomtees.com</a>. Payment verification and artwork approval actions will be enabled after secure server validation is completed.</p></section>
+<section class="card"><h2>Need assistance?</h2><p>For changes or questions about a delivery, contact <a href="mailto:order@orlandocustomtees.com">order@orlandocustomtees.com</a>. Payment verification is performed by our team.</p></section>
 </div>
 </main><script>
 const SUPABASE_URL="https://xemugzorxsmzmuuiidgu.supabase.co",SUPABASE_PUBLIC_KEY="sb_publishable_CIXSDcMhMfy5Vj-ak0YkzQ_2kO7Fix5";
@@ -47,9 +47,29 @@ async function initialize(){
  if(ordErr){$("orders").textContent="Unable to load orders. Contact support.";return}
  if(!orders?.length){$("orders").innerHTML='<p>No orders are linked to this verified email yet. If you already placed an order, contact our team so we can match your account.</p>'}
  else{$("orders").innerHTML='<div class="cards">'+orders.map(o=>'<div class="order"><strong>'+safe(o.order_number||o.id)+'</strong><p class="meta">Placed: '+safe(new Date(o.created_at).toLocaleDateString("en-US"))+'</p><span class="tag">'+safe(o.status)+'</span><p class="meta">Estimated due: '+safe(formatDate(o.due_date))+'</p><p class="meta">Total: '+new Intl.NumberFormat("en-US",{style:"currency",currency:"USD"}).format(Number(o.total||0))+'</p></div>').join("")+'</div>'}
- const {data:artworks,error:artErr}=await c.from("artworks").select("order_id,position,approval_status,approved_at,created_at").order("created_at",{ascending:false}).limit(100);
+ const {data:artworks,error:artErr}=await c.from("artworks").select("id,order_id,position,storage_path,approval_status,approved_at,created_at").order("created_at",{ascending:false}).limit(100);
  if(artErr){$("artworks").textContent="Artwork status is temporarily unavailable.";return}
- $("artworks").innerHTML=artworks?.length?'<div class="cards">'+artworks.map(a=>'<div class="order"><strong>'+safe(a.position||"Artwork")+'</strong><p class="meta">Order: '+safe(a.order_id)+'</p><span class="tag">'+safe(a.approval_status)+'</span></div>').join("")+'</div>':'<p>No artwork records are linked to your orders yet.</p>';
+ const cards=[];
+ for(const a of artworks||[]){
+  let fileUrl=null;
+  if(a.storage_path){
+   const {data:link,error:linkErr}=await c.storage.from("order-artworks").createSignedUrl(a.storage_path,600);
+   if(!linkErr)fileUrl=link?.signedUrl;
+  }
+  cards.push('<div class="order"><strong>'+safe(a.position||"Artwork")+'</strong><p class="meta">Order: '+safe(a.order_id)+'</p><span class="tag">'+safe(a.approval_status)+'</span>'+
+   (fileUrl?'<p><a target="_blank" rel="noopener noreferrer" href="'+safe(fileUrl)+'">View artwork (10-minute secure link) ↗</a></p>':'<p class="meta">Artwork file not available online yet</p>')+
+   (a.approval_status==="pending"&&fileUrl?'<div style="display:flex;gap:8px;flex-wrap:wrap"><button type="button" class="decision" data-id="'+safe(a.id)+'" data-decision="approved">Approve artwork</button><button type="button" class="secondary decision" data-id="'+safe(a.id)+'" data-decision="rejected">Request changes</button></div>':'')+'</div>');
+ }
+ $("artworks").innerHTML=cards.length?'<div class="cards">'+cards.join("")+'</div>':'<p>No artwork records are linked to your orders yet.</p>';
+ $("artworks").querySelectorAll(".decision").forEach(button=>button.addEventListener("click",async()=>{
+  const decision=button.dataset.decision;
+  if(!window.confirm(decision==="approved"?"Confirm you reviewed this artwork and approve production?":"Request changes to this artwork?"))return;
+  const all=$("artworks").querySelectorAll(".decision");all.forEach(b=>b.disabled=true);
+  const {data:response,error}=await c.functions.invoke("oct-artwork-approval",{body:{artwork_id:button.dataset.id,decision}});
+  if(error||!response?.ok){window.alert("Artwork approval could not be saved. Please contact our team.");all.forEach(b=>b.disabled=false);return}
+  await initialize();
+ }));
+
 }
 $("form").addEventListener("submit",async e=>{e.preventDefault();$("send").disabled=true;$("authMsg").textContent="Sending secure link...";
  try{
