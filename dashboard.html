@@ -81,7 +81,7 @@ function showPage(id){
  document.getElementById("pageTitle").textContent=pages.find(p=>p.id===id).label;
  let content;
  if(id==="overview"){
- content='<section class="hero"><div><span class="pill preview">SECURE DEVELOPMENT PREVIEW</span><h2>Welcome, '+safe(profile.full_name||currentUser.email)+'</h2><p>Your administrative identity is verified. This initial dashboard is a protected interface; live records and write actions are not enabled until the database authorization layer has been completed.</p></div></section>'+
+ content='<section class="hero"><div><span class="pill preview">SECURE DEVELOPMENT PREVIEW</span><h2>Welcome, '+safe(profile.full_name||currentUser.email)+'</h2><p>Your administrative identity has been verified. Live read-only data is loaded through Supabase with row-level security. Changes remain disabled until the protected write layer is implemented.</p></div></section>'+
  '<div class="stats">'+["Active orders","Estimates awaiting review","Artwork approvals","Production deadlines"].map(k=>'<div class="stat"><span>'+k+'</span><strong>—</strong><small>Live reporting not connected</small></div>').join("")+'</div>'+
  '<div class="cols"><section class="panel"><h3>Commercial workflow</h3><div class="module-items">'+[
  ["Quote request","Customer selects products and uploads artwork"],
@@ -90,17 +90,67 @@ function showPage(id){
  ["Production & fulfillment","Garments, DTF, delivery and tracking"]
  ].map(x=>'<div class="module-item"><span>'+x[0]+'</span><small>'+x[1]+'</small></div>').join("")+'</div></section>'+
  '<section class="panel"><h3>Migration readiness</h3><div class="module-items">'+[
- ["Supabase Auth","Connected"],["Administrator identity","Verified"],["Customer RLS","Enabled for own data"],["Admin data permissions","Pending"],["Historical order migration","Pending"],["PayPal/Resend server integrations","Pending"]
+ ["Supabase Auth","Connected"],["Administrator identity","Verified"],["Customer RLS","Enabled for own data"],["Admin read permissions","Configured"],["Historical order migration","Pending"],["PayPal/Resend server integrations","Pending"]
  ].map(x=>'<div class="module-item"><span>'+x[0]+'</span><small>'+x[1]+'</small></div>').join("")+'</div></section></div>'+
- '<div class="notice"><strong>Data protection:</strong> We are deliberately not showing mock financial results or fetching private customer data with elevated credentials. The original ChatGPT Sites dashboard remains unchanged and operational.</div>';
+ '<div class="notice"><strong>Data protection:</strong> This preview reads records with your authenticated Supabase session and RLS. It cannot edit payments, orders or customer data. The original ChatGPT Sites dashboard remains unchanged.</div>';
  }else{
  const d=moduleDesc[id];
  content='<div class="section-head"><h2>'+safe(d[0])+'</h2><p>'+safe(d[1])+'</p></div>'+
  '<section class="panel placeholder"><div><div class="placeholder-icon" aria-hidden="true">◫</div><strong>Module prepared</strong><p>'+safe(d[2])+'</p><p><span class="pill pending">Awaiting secure integration</span></p></div></section>';
  }
- document.getElementById("content").innerHTML=content+'<p class="footer-note">OCT Dashboard · Development environment · No live business data loaded</p>';
+ document.getElementById("content").innerHTML=content+'<p class="footer-note">OCT Dashboard · Development environment · Read-only Supabase connection</p>';
  history.replaceState(null,"","#"+id);
+ loadReadOnlyData(id);
 }
+
+let loadRevision=0;
+const readConfigs={
+ customers:{columns:[["name","Customer"],["company","Company"],["email","Email"],["phone","Phone"]],select:"id,name,company,email,phone,created_at",sort:"created_at"},
+ estimates:{columns:[["estimate_number","Estimate"],["status","Status"],["total","Total (USD)"],["created_at","Created"]],select:"id,estimate_number,status,total,created_at",sort:"created_at"},
+ orders:{columns:[["order_number","Order"],["status","Status"],["total","Total (USD)"],["due_date","Due date"],["created_at","Created"]],select:"id,order_number,status,total,due_date,created_at",sort:"created_at"}
+};
+const money=n=>typeof n==="number"?new Intl.NumberFormat("en-US",{style:"currency",currency:"USD"}).format(n):safe(n);
+const printable=(k,v)=>v===null||v===undefined||v===""?"—":k==="total"?money(Number(v)):k.includes("_at")?safe(new Date(v).toLocaleDateString("en-US")):safe(v);
+async function loadReadOnlyData(pageId){
+ const revision=++loadRevision;
+ if(pageId==="overview"){
+  const specs=[
+   {table:"orders",label:"Orders in Supabase"},
+   {table:"estimates",label:"Estimates in Supabase"},
+   {table:"customers",label:"Customers in Supabase"},
+   {table:"artworks",label:"Artworks in Supabase"}
+  ];
+  const results=await Promise.all(specs.map(async spec=>{
+   const {count,error}=await client.from(spec.table).select("id",{head:true,count:"exact"});
+   return {...spec,count,error};
+  }));
+  if(revision!==loadRevision||location.hash!=="#overview")return;
+  const stats=document.querySelector(".stats");
+  if(!stats)return;
+  stats.innerHTML=results.map(r=>'<div class="stat"><span>'+safe(r.label)+'</span><strong>'+ (r.error?"—":String(r.count??0))+'</strong><small>'+ (r.error?"Unable to load: "+safe(r.error.message):"Live, read-only Supabase data")+'</small></div>').join("");
+  return;
+ }
+ const cfg=readConfigs[pageId];if(!cfg)return;
+ const slot=document.querySelector("#content .placeholder");
+ if(slot)slot.innerHTML='<div><strong>Loading live records...</strong><p>Reading your Supabase data with the administrator session.</p></div>';
+ const {data,error}=await client.from(pageId).select(cfg.select).order(cfg.sort,{ascending:false}).limit(50);
+ if(revision!==loadRevision||location.hash!=="#"+pageId)return;
+ const target=document.querySelector("#content .placeholder");if(!target)return;
+ target.classList.remove("placeholder");
+ if(error){
+  target.innerHTML='<h3>Unable to read records</h3><p>'+safe(error.message)+'</p>';
+  return;
+ }
+ if(!data||data.length===0){
+  target.innerHTML='<h3>No records in this Supabase table yet</h3><p>Your previous ChatGPT Sites orders have not been migrated. No sample data has been added.</p>';
+  return;
+ }
+ const head=cfg.columns.map(c=>'<th scope="col">'+safe(c[1])+'</th>').join("");
+ const rows=data.map(rec=>'<tr>'+cfg.columns.map(c=>'<td>'+printable(c[0],rec[c[0]])+'</td>').join("")+'</tr>').join("");
+ target.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:15px"><h3 style="margin:0">Supabase records</h3><span class="pill pending">Read only · First 50</span></div><div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;text-align:left;font-size:13px"><thead><tr>'+head+'</tr></thead><tbody>'+rows+'</tbody></table></div>';
+ target.querySelectorAll("th,td").forEach(el=>{el.style.padding="13px 10px";el.style.borderBottom="1px solid #e4e9f1"});
+}
+
 function showGate(title,detail,allowLogin){
  gate.hidden=false;app.hidden=true;
  document.getElementById("gateTitle").textContent=title;
