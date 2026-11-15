@@ -89,8 +89,9 @@
     </form>
 
     <p id="message" role="status" aria-live="polite"></p>
+    <a id="nextLink" href="dashboard.html" style="display:none;margin-top:14px;padding:14px;background:#e83383;color:white;text-decoration:none;border-radius:8px;font-size:14px;font-weight:bold">Continue</a>
 
-    <a class="back" href="index.html">
+    <a class="back" href="https://sr-lhama.github.io/oct/">
       Back to Orlando Custom Tees
     </a>
   </main>
@@ -152,6 +153,10 @@ if (data.user) {
   }
 
   form.hidden = true;
+  const nextLink = document.getElementById("nextLink");
+  nextLink.href = profile.role === "admin" ? "dashboard.html" : "portal.html";
+  nextLink.textContent = profile.role === "admin" ? "Open Admin Dashboard" : "Track My Orders";
+  nextLink.style.display = "block";
 }
 
   } catch (error) {
