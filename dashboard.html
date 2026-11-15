@@ -171,7 +171,7 @@ async function showEditor(page,existing){
  const box=document.createElement("section");box.style.cssText="background:#fff;border-radius:16px;padding:25px;width:min(560px,100%);max-height:90vh;overflow:auto;box-shadow:0 20px 60px #091a3535";
  box.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center"><h2 style="font-size:21px;margin:0">'+(existing?"Edit":"Add")+" "+safe(page==="items"?"order item":page==="production"?"production record":page.slice(0,-1))+'</h2><button type="button" id="dismiss" class="btn secondary">Close</button></div>'+
  '<p style="color:#64748b;font-size:13px">All changes are stored in Supabase. Do not mark PayPal payments as verified here.</p>'+
- '<form id="entryForm">'+cfg.fields.map(f=>fieldInput(f,existing?.[f[0]],lookup)).join("")+
+ '<form id="entryForm">'+cfg.fields.map(f=>fieldInput(f,existing?.[f[0]],lookup)).join("")+(page==="artwork"?'<label style="display:block;margin-top:12px;font-weight:bold;font-size:13px">Private artwork file (PNG, JPEG, WebP, PDF; max 20MB)</label><input type="file" id="artworkFile" accept="image/png,image/jpeg,image/webp,application/pdf" style="margin:10px 0;max-width:100%">':'')+
  '<div style="display:flex;gap:9px;margin-top:20px"><button class="btn" type="submit">Save record</button><button class="btn secondary" type="button" id="cancelForm">Cancel</button></div><div id="formMessage" role="status"></div></form>';
  overlay.append(box);document.body.append(overlay);
  const exit=()=>closeEditor();
@@ -191,9 +191,26 @@ async function showEditor(page,existing){
  if(page==="production"&&payload.status==="production"&&!payload.production_started_at&&!existing?.production_started_at){
  payload.production_started_at=new Date().toISOString();
  }
+ let newUploadPath=null;
+ if(page==="artwork"){
+  const input=form.querySelector("#artworkFile");
+  if(input?.files?.length){
+   const file=input.files[0];
+   if(!["image/png","image/jpeg","image/webp","application/pdf"].includes(file.type)||file.size>20*1024*1024){
+    alertIn(box,"Only PNG, JPEG, WebP or PDF files up to 20MB are supported.",true);button.disabled=false;return;
+   }
+   if(!payload.order_id && !existing?.order_id){alertIn(box,"Select an order before uploading artwork.",true);button.disabled=false;return}
+   const folder=payload.order_id||existing.order_id;
+   const safeName=file.name.replace(/[^a-zA-Z0-9_.-]/g,"_").slice(-90);
+   newUploadPath=folder+"/"+crypto.randomUUID()+"-"+safeName;
+   const {error:uploadError}=await client.storage.from("order-artworks").upload(newUploadPath,file,{contentType:file.type,upsert:false});
+   if(uploadError){alertIn(box,"Artwork upload failed: "+uploadError.message,true);button.disabled=false;return}
+   payload.storage_path=newUploadPath;
+  }
+ }
  const action=existing?client.from(cfg.table).update(payload).eq("id",existing.id):client.from(cfg.table).insert(payload);
  const {error}=await action;
- if(error){alertIn(box,"Unable to save: "+error.message,true);button.disabled=false;return}
+ if(error){if(newUploadPath)await client.storage.from("order-artworks").remove([newUploadPath]);alertIn(box,"Unable to save: "+error.message,true);button.disabled=false;return}
  closeEditor();loadReadOnlyData(page);
  };
 }
