@@ -419,6 +419,21 @@ async function octLaunchArtStudio(order,quote,urls){
  resetPlacement();draw();$("studioInfo").textContent=arts.front?"Front artwork ready. Adjust placement and save.":"Choose an artwork image to create the mockup.";
 }
 
+
+async function octChooseStudioOrder(){
+ const {data:orders,error}=await client.from("orders").select("id,order_number,status").order("created_at",{ascending:false}).limit(40);
+ if(error){window.alert("Unable to load current orders: "+error.message);return}
+ const can=(orders||[]).filter(o=>["generated","sent","waiting","artwork_approval"].includes(o.status));
+ if(!can.length){window.alert("No current order is eligible for artwork preparation.");return}
+ const dialog=document.createElement("div");dialog.style.cssText="position:fixed;inset:0;z-index:330;background:#14253ebf;display:grid;place-items:center;padding:20px";
+ const panel=document.createElement("div");panel.style.cssText="background:white;border-radius:14px;padding:22px;max-width:550px;width:100%;max-height:85vh;overflow:auto";
+ panel.innerHTML='<h2>Select an order for artwork preparation</h2><p style="font-size:12px;color:#61738b">Select the customer order to open details and launch the mockup editor.</p>'+
+ can.map(o=>'<button type="button" class="btn secondary studioOrder" data-id="'+safe(o.id)+'" style="display:block;margin:8px 0;width:100%;text-align:left">'+safe(o.order_number)+' · '+safe(o.status)+'</button>').join('')+'<button class="btn" id="closeStudioList">Close</button>';
+ dialog.append(panel);document.body.append(dialog);
+ panel.querySelector("#closeStudioList").onclick=()=>dialog.remove();
+ dialog.onclick=e=>{if(e.target===dialog)dialog.remove()};
+ panel.querySelectorAll(".studioOrder").forEach(b=>b.onclick=()=>{dialog.remove();octOpenOrderWorkspace(b.dataset.id)});
+}
 async function octOpenPendingRequest(id){
  const {data:q,error}=await client.from("quote_requests").select("*").eq("id",id).maybeSingle();
  if(error||!q){window.alert("Não foi possível consultar a solicitação.");return}
@@ -470,7 +485,7 @@ async function octOpenOrderWorkspace(orderId){
  panel.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap"><div><small style="letter-spacing:1.6px;color:#e32183">ORLANDO CUSTOM TEES · CUSTOMER ORDER</small><h2 style="font-size:23px;margin:6px 0">'+safe(order.order_number)+'</h2><small>Current stage: '+safe(order.status)+' · '+qty+' pieces</small></div><button type="button" class="btn secondary" id="octCloseWorkspace">Close</button></div>'+
  '<h3 style="margin:23px 0 12px">Customer and order details</h3><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:9px">'+info+'</div>'+
  '<h3 style="margin:23px 0 12px">Original customer artwork & mockups</h3><div id="octWorkspaceArtwork" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px"><p>Loading secure files...</p></div>'+
- '<div style="display:flex;gap:8px;flex-wrap:wrap;margin:12px 0"><button type="button" class="btn" id="octLaunchStudio">✦ Open Artwork Studio</button><button type="button" class="btn secondary" id="octOpenCustomerPortal">View customer portal</button></div>'+
+ '<div style="display:flex;gap:8px;flex-wrap:wrap;margin:12px 0"><button type="button" class="btn" id="octLaunchStudio">✦ Open Artwork Studio</button><button type="button" class="btn secondary" id="octReceiptNotice">Send customer + admin receipt</button><button type="button" class="btn secondary" id="octOpenCustomerPortal">View customer portal</button></div>'+
  '<h3 style="margin:22px 0 10px">Internal estimate · Review before sending</h3>'+
  '<p style="font-size:12px;color:#69798c">Suggested unit prices come from your saved commercial catalog. Verify the right quantity tier, print locations and DTF costs before approving. Nothing is sent automatically by saving.</p>'+
  '<div style="display:flex;gap:8px;flex-wrap:wrap;margin:9px 0">'+(match?.tiers||[]).map((v,i)=>'<button class="btn secondary octPriceTier" data-price="'+safe(v)+'">Catalog tier '+(i+1)+': '+dollar.format(Number(v))+'</button>').join('')+'</div>'+
@@ -478,7 +493,14 @@ async function octOpenOrderWorkspace(orderId){
  '<p id="octWorkspaceMessage" style="font-size:12px" role="status"></p><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn secondary" type="button" id="octSendEstimate" disabled>Send approved estimate by email</button><span style="font-size:12px;color:#758499;align-self:center">Save and validate pricing first; email delivery requires a configured provider.</span></div>'+
  '<div id="octPriorProofs" style="margin-top:16px"></div>';
  panel.querySelector("#octCloseWorkspace").onclick=close;
- panel.querySelector("#octOpenCustomerPortal").onclick=()=>GenUI?.openUrl?.("https://sr-lhama.github.io/oct/customer.html");
+ panel.querySelector("#octOpenCustomerPortal").onclick=()=>window.open("https://sr-lhama.github.io/oct/customer.html","_blank","noopener");
+ panel.querySelector("#octReceiptNotice").onclick=async()=>{
+  if(!quote?.id){window.alert("This order is not linked to an original quote request");return}
+  const btn=panel.querySelector("#octReceiptNotice");btn.disabled=true;
+  const {data,error}=await client.functions.invoke("oct-notify-quote",{body:{quote_id:quote.id}});
+  btn.disabled=false;
+  panel.querySelector("#octWorkspaceMessage").textContent=error||!data?.ok?"Email not delivered: "+(data?.error||error?.message||"Provider unavailable"):"Customer receipt: "+(data.customer_sent?"sent":"pending")+" · Administrator receipt: "+(data.admin_sent?"sent":"pending");
+ };
  const pricing=panel.querySelector("#octWorkspacePrice");
  const msg=panel.querySelector("#octWorkspaceMessage");
  const calculate=()=>{
@@ -581,7 +603,7 @@ async function renderOctOverview(){
  const add=document.getElementById("addEstimate");
  if(add)add.onclick=()=>{showPage("estimates");setTimeout(()=>document.querySelector("#newEntry")?.click(),400)};
  const studio=document.getElementById("launchStudio");
- if(studio)studio.onclick=()=>showPage("studiohistory");
+ if(studio)studio.onclick=octChooseStudioOrder;
 }
 function nav(){
  const mark=p=>'<button type="button" class="nav-btn" data-page="'+p.id+'" '+(p.id==="overview"?'aria-current="page"':'')+'><span class="nav-icon" aria-hidden="true">'+p.icon+'</span>'+safe(p.label)+'</button>';
@@ -780,7 +802,15 @@ async function loadReadOnlyData(pageId){
  target.innerHTML=toolbar+(rows.length?'<div style="overflow-x:auto"><table class="data-table" style="width:100%;border-collapse:collapse;font-size:13px;text-align:left"><thead><tr>'+heads+'</tr></thead><tbody>'+line+'</tbody></table></div>':'<p>No records yet. The legacy dataset is not present in Supabase.</p>');
  target.querySelectorAll("th,td").forEach(n=>{n.style.padding="12px 10px";n.style.borderBottom="1px solid #e3e9f2"});
  if(addable)target.querySelector("#newEntry").onclick=()=>showEditor(pageId,null);
- target.querySelectorAll(".editRecord").forEach(n=>n.onclick=()=>showEditor(pageId,rows[Number(n.dataset.index)]));
+ target.querySelectorAll(".editRecord").forEach(n=>n.onclick=async()=>{
+ const row=rows[Number(n.dataset.index)];
+ if(pageId==="orders"||pageId==="production"){octOpenOrderWorkspace(row.id);return}
+ if(pageId==="estimates"){
+  const {data:linked}=await client.from("orders").select("id").eq("estimate_id",row.id).maybeSingle();
+  if(linked?.id){octOpenOrderWorkspace(linked.id);return}
+ }
+ showEditor(pageId,row);
+});
  target.querySelectorAll(".legacyDetail").forEach(button=>button.onclick=async()=>{
   const rec=rows[Number(button.dataset.index)];
   closeEditor();
