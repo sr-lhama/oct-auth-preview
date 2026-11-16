@@ -37,12 +37,15 @@ body{font-family:Inter,"Segoe UI",Arial,sans-serif;background:var(--bg);color:#2
 .stats{gap:15px;margin:0 0 24px}.stat{min-height:120px;border-color:#dce4ee;border-radius:13px;padding:22px;box-shadow:none}
 .stat span{font-size:11px}.stat strong{font-size:25px;color:#232937;margin:12px 0}.stat small{font-size:11px}
 .kanban-header{display:flex;justify-content:space-between;gap:10px;align-items:center;margin:0 0 17px;flex-wrap:wrap}
-.kanban-header h3{font-size:19px;margin:0}.oct-pipeline-card{margin-top:9px}.oct-pipeline-card .oct-order{margin:0}.oct-pipeline-actions{display:flex;flex-wrap:wrap;gap:5px;margin-top:5px}.oct-pipeline-actions .btn{min-height:0;padding:5px 7px;font-size:11px}
-dialog#recordEditor{border:1px solid #d4e1ec;border-radius:14px;color:#25314a;padding:22px;width:min(520px,calc(100% - 28px));max-height:90vh}dialog#recordEditor::backdrop{background:#0e1c35bd}dialog#recordEditor label{display:grid;gap:4px;margin:8px 0}dialog#recordEditor [hidden]{display:none!important}
+.kanban-header h3{font-size:19px;margin:0}.oct-stage-orders{min-height:0;overflow-y:auto;scrollbar-gutter:stable;padding:2px}
+.oct-stage-orders:focus-visible{outline:2px solid #009acc;outline-offset:-2px}
+.oct-order-header{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;position:sticky;top:-25px;z-index:2;background:#fff;padding:12px 0;border-bottom:1px solid #e1e7ef}
+.oct-order-actions{display:flex;align-items:center;flex-wrap:wrap;gap:6px}.oct-order-header h2{font-size:23px;margin:4px 0}
+dialog#octStageDialog{border:1px solid #d4e1ec;border-radius:14px;color:#25314a;padding:22px;width:min(520px,calc(100% - 28px));max-height:90vh}dialog#octStageDialog::backdrop{background:#0e1c35bd}dialog#octStageDialog label{display:grid;gap:4px;margin:8px 0}dialog#octStageDialog [hidden]{display:none!important}
 .oct-manager :is(.sidebar,.mobile-nav,.header-clock,#hideMenu,#startShift,#workHoursNav,#newEstimateNav,#myOrdersNav,#octSoundsToggle,#octSoundSettingsToggle,#darkModeToggle,#octOverviewStats,#launchStudio,#addEstimate){display:none!important}
 .oct-pipeline{display:grid;grid-template-columns:repeat(5,minmax(155px,1fr));gap:12px}
-.oct-stage{min-height:280px;background:#eaf0f6;border-radius:12px;padding:12px 10px}
-.oct-stage-title{display:flex;justify-content:space-between;align-items:center;font-size:10px;gap:5px;font-weight:700;min-height:30px;color:#394355}
+.oct-stage{height:280px;display:flex;flex-direction:column;min-width:0;background:#eaf0f6;border-radius:12px;padding:12px 10px}
+.oct-stage-title{display:flex;flex:none;justify-content:space-between;align-items:center;font-size:10px;gap:5px;font-weight:700;min-height:30px;color:#394355}
 .oct-stage-title b{font-size:10px}.oct-stage-count{background:white;color:#97a7bc;border-radius:100%;min-width:20px;text-align:center;padding:3px 5px}
 .oct-empty{text-align:center;margin:44px 3px;color:#8490a4;font-size:10px}
 .oct-order{display:block;background:white;text-align:left;width:100%;border:1px solid #dfe5ee;border-radius:10px;padding:13px;margin:8px 0;cursor:pointer;color:#34415b}
@@ -65,7 +68,7 @@ body.dark-mode{--bg:#151c27;--line:#38465a;color:#edf3fc}
 body.dark-mode .content{background:#151c27}body.dark-mode .sidebar,body.dark-mode .topbar,body.dark-mode .stat,body.dark-mode .panel,body.dark-mode .oct-order{background:#202b3a;color:#f2f5ff;border-color:#39465b}
 body.dark-mode .nav-btn{color:#b2bed0}body.dark-mode .oct-stage{background:#2a3647}body.dark-mode .oct-head h2,body.dark-mode .stat strong,body.dark-mode .topbar h1,body.dark-mode .user-info strong{color:white}body.dark-mode .oct-order strong{color:#fff}
 @media(max-width:1180px){.oct-pipeline{grid-template-columns:repeat(3,minmax(150px,1fr))}.header-clock{display:none}}
-@media(max-width:720px){.sidebar{display:none}.topbar{padding:12px 16px}.topbar-actions{margin-left:0}.content{padding:20px 13px}.oct-head h2{font-size:23px}.oct-pipeline{grid-template-columns:repeat(2,minmax(140px,1fr))}.oct-stage{min-height:170px}.stats{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:720px){.sidebar{display:none}.topbar{padding:12px 16px}.topbar-actions{margin-left:0}.content{padding:20px 13px}.oct-head h2{font-size:23px}.oct-pipeline{grid-template-columns:repeat(2,minmax(140px,1fr))}.oct-stage{height:250px}.stats{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:400px){.oct-pipeline{grid-template-columns:1fr}}
 
 
@@ -597,6 +600,18 @@ async function octOpenPendingRequest(id){
  orderId=(orders||[]).find(o=>o.legacy_payload?.quote_request_id===id)?.id;
  if(orderId)octOpenOrderWorkspace(orderId);else{showPage("inbox");window.alert("A solicitação foi convertida. Abra o pedido na lista para continuar.")}
 }
+function octOrderWorkspaceHeader(order,quantity){
+ const stageKey=order.status==="payment_confirmed"?"in_progress":order.status;
+ const stage=OCT_STAGES.find(([key])=>key===stageKey)?.[1]||order.status;
+ const editable=["admin","manager"].includes(profile?.role);
+ const action=stageKey==="in_progress"?'<button type="button" class="btn" data-next-stage="finished">Pedido finalizado</button>':
+  stageKey==="finished"?'<button type="button" class="btn" data-next-stage="delivered">'+(order.fulfillment_method==="pickup"?"Confirmar retirada":"Confirmar entrega")+'</button>':"";
+ return '<header class="oct-order-header"><div><small>ORLANDO CUSTOM TEES</small>'+
+  '<h2>'+safe(order.order_number||order.id)+'</h2><small id="octWorkspaceStage">'+safe(stage)+' · '+safe(quantity)+' peças</small></div>'+
+  '<div class="oct-order-actions">'+(editable?'<button type="button" class="btn secondary" data-next-stage="">Alterar status</button>'+action:"")+
+  '<button type="button" class="btn secondary" id="octCloseWorkspace">Fechar</button></div></header>';
+}
+
 async function octOpenOrderWorkspace(orderId){
  closeEditor();
  const veil=document.createElement("div");veil.id="recordEditor";
@@ -606,7 +621,31 @@ async function octOpenOrderWorkspace(orderId){
  panel.innerHTML='<h2>Carregando ficha comercial do pedido...</h2>';
  const close=()=>veil.remove();veil.onclick=e=>{if(e.target===veil)close()};
  const {data:order,error}=await client.from("orders").select("*").eq("id",orderId).maybeSingle();
- if(error||!order){panel.textContent="Pedido indisponível. "+(error?.message||"");return}
+ if(error||!order){
+  panel.innerHTML='<p role="alert">Pedido indisponível. '+safe(error?.message||"")+'</p><button type="button" class="btn secondary">Fechar</button>';
+  panel.querySelector("button").onclick=close;
+  return;
+ }
+ function bindHeader(){
+  panel.querySelector("#octCloseWorkspace").onclick=close;
+  panel.querySelectorAll("[data-next-stage]").forEach(button=>{
+   button.onclick=()=>octOpenStageDialog(order,button.dataset.nextStage,veil);
+  });
+ }
+ if(profile?.role==="manager"){
+  const legacy=order.legacy_payload||{};
+  const data=typeof legacy.data==="string"?JSON.parse(legacy.data):legacy.data||{};
+  const pricing=typeof legacy.pricing==="string"?JSON.parse(legacy.pricing):legacy.pricing||{};
+  const quantity=pricing.quantity??Object.values(data.sizes||{}).reduce((total,size)=>total+Number(size||0),0);
+  panel.style.width="min(720px,100%)";
+  panel.style.height="auto";
+  panel.style.maxHeight="92vh";
+  panel.innerHTML=octOrderWorkspaceHeader(order,quantity)+'<h3>'+safe(data.company||data.name||"Cliente")+'</h3>'+
+   '<p>'+safe(data.productName||data.productId||"Personalizado")+'</p>'+
+   '<p>'+safe(dollar.format(Number(order.total||0)))+'</p>';
+  bindHeader();
+  return;
+ }
  const quoteId=order.legacy_payload?.quote_request_id;
  const [quoteResp,customerResp,estimateResp,catalogResp,proofResp]=await Promise.all([
   quoteId?client.from("quote_requests").select("*").eq("id",quoteId).maybeSingle():Promise.resolve({data:null}),
@@ -630,7 +669,7 @@ async function octOpenOrderWorkspace(orderId){
   ["Requested date",quote?.need_by],["Delivery",quote?.delivery],["Delivery address",quote?.shipping_address||customer?.address],["Notes",quote?.notes||data.notes]
  ];
  const info=rows.map(([k,v])=>'<div style="border:1px solid #e1eaf3;padding:11px;border-radius:9px"><small style="display:block;color:#718197;margin-bottom:5px">'+safe(k)+'</small><strong style="font-size:12px;overflow-wrap:anywhere">'+safe(v||"—")+'</strong></div>').join("");
- panel.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap"><div><small style="letter-spacing:1.6px;color:#e32183">ORLANDO CUSTOM TEES · CUSTOMER ORDER</small><h2 style="font-size:23px;margin:6px 0">'+safe(order.order_number)+'</h2><small id="octWorkspaceStage">Current stage: '+safe(order.status)+' · '+qty+' pieces</small></div><button type="button" class="btn secondary" id="octCloseWorkspace">Close</button></div>'+
+ panel.innerHTML=octOrderWorkspaceHeader(order,qty)+
  '<h3 style="margin:23px 0 12px">Customer and order details</h3><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:9px">'+info+'</div>'+
  '<h3 style="margin:23px 0 12px">Original customer artwork & mockups</h3><div id="octWorkspaceArtwork" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px"><p>Loading secure files...</p></div>'+
  '<div style="display:flex;gap:8px;flex-wrap:wrap;margin:12px 0"><button type="button" class="btn" id="octLaunchStudio">✦ Open Artwork Studio</button><button type="button" class="btn secondary" id="octReceiptNotice">Reenviar boas-vindas + cópias administrativas</button><button type="button" class="btn secondary" id="octOpenCustomerPortal">View customer portal</button></div>'+
@@ -646,7 +685,11 @@ async function octOpenOrderWorkspace(orderId){
  '<label>Número da ordem<input name="reference" required maxlength="120"></label><label>Data da ordem<input name="ordered" type="date" required></label><label>Data do pagamento ao fornecedor<input name="paid" type="date" required></label><label>Valor pago (USD)<input name="amount" type="number" min="0.01" step="0.01" required></label><button class="btn secondary" type="submit">Registrar compra paga</button></form>').join("")+
  '</div><p id="octSupplyMessage" role="status"></p><div id="octSupplyList"></div><div id="octFeeBox"></div></section>'+
  '<div id="octPriorProofs" style="margin-top:16px"></div>';
- panel.querySelector("#octCloseWorkspace").onclick=close;
+ bindHeader();
+ function refreshHeader(){
+  panel.querySelector(".oct-order-header").outerHTML=octOrderWorkspaceHeader(order,qty);
+  bindHeader();
+ }
  const production=panel.querySelector("#octProductionPurchases");
  const supplyMessage=panel.querySelector("#octSupplyMessage");
  const feeBox=panel.querySelector("#octFeeBox");
@@ -756,7 +799,7 @@ async function octOpenOrderWorkspace(orderId){
     const {data,error}=await client.rpc("oct_record_manual_payment",{p_order:order.id,p_method:method,p_amount:amount,p_reference:ref||null});
     if(error||!data)throw Error(error?.message||"Não foi possível salvar o pagamento.");
     order.status="in_progress";hasPaid=true;
-    panel.querySelector("#octWorkspaceStage").textContent="Em produção · "+qty+" peças";
+    refreshHeader();
     manualForm.hidden=true;manualForm.reset();
     manualInfo.textContent="Pagamento registrado. Pedido movido para Em produção.";
     await loadPaymentHistory();await openProductionPurchases();renderOctOverview();
@@ -784,7 +827,7 @@ async function octOpenOrderWorkspace(orderId){
      data?.delivery==="sent"?"PayPal aceitou o envio da fatura.":
      data?.status==="NOT_CREATED"?"Nenhuma fatura Live registrada no painel novo.":
      data?.status==="DRAFT"?"Fatura em rascunho no PayPal. Use Emitir e enviar para concluir.":"Status no PayPal: "+String(data?.status||"indisponível").replaceAll("_"," ")+".";
-    if(data?.paid){if(order.status==="awaiting_payment"){order.status="in_progress";panel.querySelector("#octWorkspaceStage").textContent="Em produção · "+qty+" peças";}hasPaid=true;await loadPaymentHistory();await openProductionPurchases();renderOctOverview();}
+    if(data?.paid){if(order.status==="awaiting_payment"){order.status="in_progress";refreshHeader();}hasPaid=true;await loadPaymentHistory();await openProductionPurchases();renderOctOverview();}
    }catch(error){
     if(action==="check_setup")ready=false;
     payInfo.textContent=error.message;
@@ -880,10 +923,9 @@ const octShippingLinks={
  FedEx:"https://www.fedex.com/fedextrack/?trknbr=",
  DHL:"https://www.dhl.com/us-en/home/tracking.html?tracking-id="
 };
-function octOpenStageDialog(order,initial){
- closeEditor();
+function octOpenStageDialog(order,initial,workspace){
  const dialog=document.createElement("dialog");
- dialog.id="recordEditor";
+ dialog.id="octStageDialog";
  dialog.setAttribute("aria-labelledby","octStageTitle");
  dialog.innerHTML='<form><div class="kanban-header"><h3 id="octStageTitle">Alterar status</h3><button class="btn secondary" type="button" data-close>Fechar</button></div>'+
   '<p>'+safe(order.order_number||order.id)+'</p>'+
@@ -941,7 +983,7 @@ function octOpenStageDialog(order,initial){
    const {error}=await client.rpc("oct_change_order_stage",args);
    if(error)throw error;
    dialog.close();
-   await renderOctOverview();
+   await Promise.all([renderOctOverview(),workspace.isConnected?octOpenOrderWorkspace(order.id):null]);
   }catch(error){feedback.textContent=error.message||"Não foi possível salvar o status.";submit.disabled=false;}
  });
  update();dialog.showModal();
@@ -968,30 +1010,30 @@ async function renderOctOverview(){
  ["Saldo registrado",amount(cash.balance),Number(cash.pending_fees)>0?"Saldo parcial · taxas PayPal pendentes":"Entradas menos saídas dos pedidos"]
  ];
  if(stats)stats.innerHTML=metrics.map(([label,value,sub])=>'<div class="stat"><span>'+safe(label)+'</span><strong>'+safe(value)+'</strong><small>'+safe(sub)+'</small></div>').join("");
+ const scrollPositions=new Map(Array.from(stageTarget.querySelectorAll(".oct-stage-orders"),list=>[list.dataset.stageList,list.scrollTop]));
  stageTarget.innerHTML=OCT_STAGES.map(([key,label])=>{
- const group=orders.filter(o=>{
-  const stage=o.status==="payment_confirmed"?"in_progress":o.status;
-  return stage===key;
- });
- const pending=key==='generated'?pendingQuotes:[];
- return '<section class="oct-stage" data-stage="'+key+'"><div class="oct-stage-title"><b>'+label+'</b><span class="oct-stage-count">'+(group.length+pending.length)+'</span></div>'+
- ((group.length+pending.length)?group.map(o=>{
-  const detail=o.legacy_payload||{},raw=typeof detail.data==="string"?JSON.parse(detail.data):detail.data||{};
-  const price=typeof detail.pricing==="string"?JSON.parse(detail.pricing):detail.pricing||{};
-  const quantity=price.quantity??Object.values(raw.sizes||{}).reduce((n,v)=>n+Number(v||0),0);
-  return '<div class="oct-pipeline-card">'+(manager?'<div class="oct-order">':'<button type="button" class="oct-order" data-order="'+safe(o.id)+'">')+'<small>'+safe(o.order_number||o.id)+'</small>'+
+  const group=orders.filter(o=>(o.status==="payment_confirmed"?"in_progress":o.status)===key);
+  const pending=key==="generated"?pendingQuotes:[];
+  const count=group.length+pending.length;
+  const orderCards=group.map(o=>{
+   const detail=o.legacy_payload||{},raw=typeof detail.data==="string"?JSON.parse(detail.data):detail.data||{};
+   const price=typeof detail.pricing==="string"?JSON.parse(detail.pricing):detail.pricing||{};
+   const quantity=price.quantity??Object.values(raw.sizes||{}).reduce((n,v)=>n+Number(v||0),0);
+   return '<button type="button" class="oct-order" data-order="'+safe(o.id)+'"><small>'+safe(o.order_number||o.id)+'</small>'+
     '<strong>'+safe(raw.company||raw.name||"Cliente")+'</strong>'+
     '<p>'+safe(quantity)+' peças · '+safe(raw.productName||raw.productId||"Personalizado")+'</p>'+
-    '<em>'+(Number(o.total||0)>0?dollar.format(Number(o.total)):'Estimate pending')+'</em>'+(manager?'</div>':'</button>')+
-    '<div class="oct-pipeline-actions"><button type="button" class="btn secondary" data-stage-order="'+safe(o.id)+'">Alterar status</button>'+
-    (key==="in_progress"?'<button type="button" class="btn" data-stage-order="'+safe(o.id)+'" data-stage-next="finished">Pedido finalizado</button>':
-     key==="finished"?'<button type="button" class="btn" data-stage-order="'+safe(o.id)+'" data-stage-next="delivered">'+(o.fulfillment_method==="pickup"?"Confirmar retirada":"Confirmar entrega")+'</button>':"")+'</div></div>';
- }).join('')+pending.map(q=>'<button type="button" class="oct-order" data-pending-quote="'+safe(q.id)+'"><small>'+safe(q.request_number)+' · WEBSITE</small><strong>'+safe(q.company||q.customer_name)+'</strong><p>'+safe(q.quantity)+' peças · '+safe(q.product)+'</p><em>Aguardando orçamento</em></button>').join(''):'<div class="oct-empty">Nenhum pedido nesta etapa</div>')+'</section>';
+    '<em>'+(Number(o.total||0)>0?dollar.format(Number(o.total)):'Estimate pending')+'</em></button>';
+  }).join("");
+  const quoteCards=pending.map(q=>'<button type="button" class="oct-order" data-pending-quote="'+safe(q.id)+'"><small>'+safe(q.request_number)+' · WEBSITE</small><strong>'+safe(q.company||q.customer_name)+'</strong><p>'+safe(q.quantity)+' peças · '+safe(q.product)+'</p><em>Aguardando orçamento</em></button>').join("");
+  return '<section class="oct-stage" data-stage="'+key+'"><div class="oct-stage-title"><b>'+safe(label)+'</b><span class="oct-stage-count">'+count+'</span></div>'+
+   (count?'<div class="oct-stage-orders" data-stage-list="'+key+'" role="group" aria-label="'+safe(label)+'" tabindex="0">'+orderCards+quoteCards+'</div>':'<div class="oct-empty">Nenhum pedido nesta etapa</div>')+
+   '</section>';
  }).join("");
  stageTarget.querySelectorAll("[data-pending-quote]").forEach(b=>b.onclick=()=>octOpenPendingRequest(b.dataset.pendingQuote));
  stageTarget.querySelectorAll("[data-order]").forEach(b=>b.onclick=()=>octOpenOrderWorkspace(b.dataset.order));
- const ordersById=new Map(orders.map(o=>[o.id,o]));
- stageTarget.querySelectorAll("[data-stage-order]").forEach(b=>b.onclick=()=>octOpenStageDialog(ordersById.get(b.dataset.stageOrder),b.dataset.stageNext));
+ stageTarget.querySelectorAll(".oct-stage-orders").forEach(list=>{
+  list.scrollTop=scrollPositions.get(list.dataset.stageList)||0;
+ });
  const refresh=document.getElementById("refreshOverview");
  if(refresh)refresh.onclick=renderOctOverview;
  const add=document.getElementById("addEstimate");
