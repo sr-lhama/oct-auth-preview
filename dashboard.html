@@ -628,7 +628,7 @@ async function octOpenOrderWorkspace(orderId){
   ["Requested date",quote?.need_by],["Delivery",quote?.delivery],["Delivery address",quote?.shipping_address||customer?.address],["Notes",quote?.notes||data.notes]
  ];
  const info=rows.map(([k,v])=>'<div style="border:1px solid #e1eaf3;padding:11px;border-radius:9px"><small style="display:block;color:#718197;margin-bottom:5px">'+safe(k)+'</small><strong style="font-size:12px;overflow-wrap:anywhere">'+safe(v||"—")+'</strong></div>').join("");
- panel.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap"><div><small style="letter-spacing:1.6px;color:#e32183">ORLANDO CUSTOM TEES · CUSTOMER ORDER</small><h2 style="font-size:23px;margin:6px 0">'+safe(order.order_number)+'</h2><small>Current stage: '+safe(order.status)+' · '+qty+' pieces</small></div><button type="button" class="btn secondary" id="octCloseWorkspace">Close</button></div>'+
+ panel.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap"><div><small style="letter-spacing:1.6px;color:#e32183">ORLANDO CUSTOM TEES · CUSTOMER ORDER</small><h2 style="font-size:23px;margin:6px 0">'+safe(order.order_number)+'</h2><small id="octWorkspaceStage">Current stage: '+safe(order.status)+' · '+qty+' pieces</small></div><button type="button" class="btn secondary" id="octCloseWorkspace">Close</button></div>'+
  '<h3 style="margin:23px 0 12px">Customer and order details</h3><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:9px">'+info+'</div>'+
  '<h3 style="margin:23px 0 12px">Original customer artwork & mockups</h3><div id="octWorkspaceArtwork" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px"><p>Loading secure files...</p></div>'+
  '<div style="display:flex;gap:8px;flex-wrap:wrap;margin:12px 0"><button type="button" class="btn" id="octLaunchStudio">✦ Open Artwork Studio</button><button type="button" class="btn secondary" id="octReceiptNotice">Reenviar boas-vindas + cópias administrativas</button><button type="button" class="btn secondary" id="octOpenCustomerPortal">View customer portal</button></div>'+
@@ -637,18 +637,66 @@ async function octOpenOrderWorkspace(orderId){
  '<div style="display:flex;gap:8px;flex-wrap:wrap;margin:9px 0">'+(match?.tiers||[]).map((v,i)=>'<button class="btn secondary octPriceTier" data-price="'+safe(v)+'">Catalog tier '+(i+1)+': '+dollar.format(Number(v))+'</button>').join('')+'</div>'+
  '<form id="octWorkspacePrice" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;align-items:end"><label style="font-size:12px">Price per piece (USD)<input name="unit" type="number" min="0" step="0.01" required value="'+(unitStart?unitStart.toFixed(2):"")+'" style="width:100%;padding:11px;border:1px solid #d2e0ec;border-radius:9px"></label><label style="font-size:12px">Sales tax (%)<input name="tax_rate" type="number" min="0" max="25" step="0.001" value="6.5" style="width:100%;padding:11px;border:1px solid #d2e0ec;border-radius:9px"></label><label style="font-size:12px">Shipping (USD)<input name="shipping" type="number" min="0" step="0.01" value="'+Number(estimate?.shipping||0).toFixed(2)+'" style="width:100%;padding:11px;border:1px solid #d2e0ec;border-radius:9px"></label><div><strong id="octWorkspaceTotal">Pending estimate</strong><div style="font-size:11px;color:#76879b">Total for '+qty+' pieces</div></div><button class="btn" type="submit">Save internal estimate</button></form>'+
  '<p id="octWorkspaceMessage" style="font-size:12px" role="status"></p><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn secondary" type="button" id="octSendEstimate" disabled>Send estimate and proof</button><span style="font-size:12px;color:#758499;align-self:center">Save pricing and an approval proof for every print position before sending.</span></div>'+
- (order.quote_review?.decision==="approved"?'<section style="margin-top:18px;padding:14px;border:1px solid #d2e3ef;border-radius:10px"><h3>PayPal Live</h3><p>Destinatário: <strong>'+safe(customer?.email||"—")+'</strong> · Total aprovado: <strong>'+dollar.format(Number(order.quote_review.total))+'</strong></p><div style="display:flex;gap:8px;flex-wrap:wrap"><button type="button" class="btn secondary" id="octPayPalSetup">Verificar conexão Live</button><button type="button" class="btn secondary" id="octPayPalStatus">Consultar pagamento</button><button type="button" class="btn" id="octPayPalIssue" disabled>Emitir e enviar fatura Live</button><button type="button" class="btn secondary" id="octPayPalResend" disabled>Reenviar fatura</button></div><p id="octPayPalInfo" role="status" style="margin-bottom:0">Confira a conexão antes de emitir.</p></section>':"")+
+ (order.quote_review?.decision==="approved"?'<section style="margin-top:18px;padding:14px;border:1px solid #d2e3ef;border-radius:10px"><h3>PayPal Live</h3><p>Destinatário: <strong>'+safe(customer?.email||"—")+'</strong> · Total aprovado: <strong>'+dollar.format(Number(order.quote_review.total))+'</strong></p><div style="display:flex;gap:8px;flex-wrap:wrap"><button type="button" class="btn secondary" id="octPayPalSetup">Verificar conexão Live</button><button type="button" class="btn secondary" id="octPayPalStatus">Consultar pagamento</button><button type="button" class="btn" id="octPayPalIssue" disabled>Emitir e enviar fatura Live</button><button type="button" class="btn secondary" id="octPayPalResend" disabled>Reenviar fatura</button><button type="button" class="btn secondary" id="octRecordManualPayment" disabled>Registrar pagamento</button></div><p id="octPayPalInfo" role="status" style="margin-bottom:0">Confira a conexão antes de emitir.</p><form id="octManualPaymentForm" hidden style="margin-top:13px;padding:12px;border:1px solid #d2e3ef;border-radius:8px"><h4 style="margin:0 0 10px">Pagamento recebido fora do PayPal</h4><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(165px,1fr));gap:10px"><label>Forma de pagamento<select name="method" required style="display:block;width:100%;padding:8px"><option value="">Selecione</option><option value="cash">Cash (dinheiro)</option><option value="zelle">Zelle</option></select></label><label>Valor recebido (USD)<input name="amount" type="number" min="0.01" step="0.01" required style="display:block;width:100%;padding:8px"></label><label>Referência (opcional)<input name="reference" maxlength="200" placeholder="Ex.: confirmação Zelle" style="display:block;width:100%;padding:8px"></label></div><p id="octManualPayWarning" style="font-size:12px"></p><button type="submit" class="btn">Salvar pagamento</button> <button type="button" class="btn secondary" id="octManualPayCancel">Cancelar</button></form><p id="octManualPayInfo" role="status" style="font-size:13px;margin-bottom:0"></p><div id="octPaymentHistory" style="margin-top:13px"></div></section>':"")+
  '<div id="octPriorProofs" style="margin-top:16px"></div>';
  panel.querySelector("#octCloseWorkspace").onclick=close;
  const payIssue=panel.querySelector("#octPayPalIssue");
  if(payIssue){
   const payResend=panel.querySelector("#octPayPalResend"),paySetup=panel.querySelector("#octPayPalSetup"),payStatus=panel.querySelector("#octPayPalStatus"),payInfo=panel.querySelector("#octPayPalInfo");
-  let ready=false,hasInvoice=false,busy=false;
-  const eligible=order.status==="awaiting_payment"&&!!customer?.email;
-  const canIssue=()=>ready&&eligible&&!hasInvoice&&!busy;
+  const manualButton=panel.querySelector("#octRecordManualPayment"),manualForm=panel.querySelector("#octManualPaymentForm");
+  const manualInfo=panel.querySelector("#octManualPayInfo"),history=panel.querySelector("#octPaymentHistory");
+  const manualSubmit=manualForm.querySelector('[type="submit"]');
+  let ready=false,hasInvoice=false,busy=false,manualBusy=false,paypalState=null,hasPaid=false,historyReady=false;
+  const eligible=()=>order.status==="awaiting_payment"&&!!customer?.email&&!hasPaid;
+  const canIssue=()=>ready&&eligible()&&!hasInvoice&&!busy&&!manualBusy;
+  function setPaymentButtons(){
+   paySetup.disabled=payStatus.disabled=busy||manualBusy;
+   payIssue.disabled=!canIssue();
+   payResend.disabled=!ready||!eligible()||busy||manualBusy;
+   manualButton.disabled=!historyReady||hasPaid||busy||manualBusy||order.status!=="awaiting_payment";
+   manualSubmit.disabled=manualButton.disabled;
+   panel.querySelector("#octManualPayWarning").textContent=["SENT","UNPAID","PARTIALLY_PAID","PAYMENT_PENDING"].includes(paypalState)?
+    "Há uma fatura PayPal em aberto. Confira no PayPal para evitar que o cliente pague duas vezes. O registro aqui não encerra a fatura no PayPal.":"Registre somente um pagamento integral já recebido.";
+  }
+  async function loadPaymentHistory(){
+   const {data,error}=await client.from("payments").select("provider,provider_reference,amount,status,paid_at,created_at")
+    .eq("order_id",order.id).order("created_at",{ascending:false});
+   historyReady=!error;
+   if(error){history.textContent="Não foi possível carregar os pagamentos.";setPaymentButtons();return}
+   hasPaid=(data||[]).some(item=>item.paid_at||String(item.status).toLowerCase()==="paid");
+   const names={paypal:"PayPal",cash:"Cash (dinheiro)",zelle:"Zelle"};
+   history.innerHTML='<h4>Pagamentos registrados</h4>'+((data||[]).map(row=>
+    '<div style="padding:9px 0;border-top:1px solid #e3edf4"><strong>'+safe(names[row.provider]||row.provider)+'</strong> · '+safe(dollar.format(Number(row.amount)))+
+    ' · '+safe(row.paid_at?new Date(row.paid_at).toLocaleString("pt-BR"):row.status)+
+    (row.provider_reference?' · Referência: '+safe(row.provider_reference):'')+'</div>').join("")||'<p>Nenhum pagamento registrado.</p>');
+   setPaymentButtons();
+  }
+  manualButton.onclick=()=>{
+   manualForm.hidden=!manualForm.hidden;
+   if(!manualForm.hidden){manualForm.elements.amount.value=Number(order.quote_review.total).toFixed(2);manualForm.elements.method.focus();}
+  };
+  panel.querySelector("#octManualPayCancel").onclick=()=>{manualForm.hidden=true};
+  manualForm.onsubmit=async event=>{
+   event.preventDefault();
+   if(manualButton.disabled)return;
+   const method=manualForm.elements.method.value,amount=manualForm.elements.amount.value;
+   const ref=manualForm.elements.reference.value.trim();
+   if(!["cash","zelle"].includes(method)||!window.confirm("Registrar "+dollar.format(Number(amount))+" já recebidos via "+(method==="cash"?"Cash (dinheiro)":"Zelle")+"?"))return;
+   manualBusy=true;setPaymentButtons();manualInfo.textContent="Registrando pagamento…";
+   try{
+    const {data,error}=await client.rpc("oct_record_manual_payment",{p_order:order.id,p_method:method,p_amount:amount,p_reference:ref||null});
+    if(error||!data)throw Error(error?.message||"Não foi possível salvar o pagamento.");
+    order.status="payment_confirmed";hasPaid=true;
+    panel.querySelector("#octWorkspaceStage").textContent="Pagamento confirmado · "+qty+" peças";
+    manualForm.hidden=true;manualForm.reset();
+    manualInfo.textContent="Pagamento registrado. Pedido marcado como Pagamento confirmado.";
+    await loadPaymentHistory();renderOctOverview();
+   }catch(error){manualInfo.textContent=error.message}
+   finally{manualBusy=false;setPaymentButtons()}
+  };
   async function runPayPal(action,refresh=false){
-   if(busy)return;
-   busy=true;payResend.disabled=payIssue.disabled=paySetup.disabled=payStatus.disabled=true;
+   if(busy||manualBusy)return;
+   busy=true;setPaymentButtons();
    payInfo.textContent="Consultando PayPal Live…";
    try{
     const body={action,order_id:order.id,refresh};
@@ -659,17 +707,19 @@ async function octOpenOrderWorkspace(orderId){
      ready=data?.ready===true;payInfo.textContent=ready?"Webhook Live verificado. Confira o destinatário e o valor antes de emitir.":"Webhook Live ainda indisponível.";
      return;
     }
+    paypalState=data?.status||null;
     hasInvoice=!!data?.status&&!["NOT_CREATED","DRAFT"].includes(data.status);
-    payInfo.textContent=data?.paid?"Pagamento integral confirmado pelo PayPal.":
+    payInfo.textContent=data?.status==="PAID_OFFLINE"?"Pagamento registrado fora do PayPal.":
+     data?.paid?"Pagamento integral confirmado pelo PayPal.":
      data?.delivery==="resent"?"PayPal aceitou o reenvio da fatura existente.":
      data?.delivery==="sent"?"PayPal aceitou o envio da fatura.":
      data?.status==="NOT_CREATED"?"Nenhuma fatura Live registrada no painel novo.":
      data?.status==="DRAFT"?"Fatura em rascunho no PayPal. Use Emitir e enviar para concluir.":"Status no PayPal: "+String(data?.status||"indisponível").replaceAll("_"," ")+".";
-    if(data?.paid)renderOctOverview();
+    if(data?.paid){if(order.status==="awaiting_payment")order.status="payment_confirmed";hasPaid=true;await loadPaymentHistory();renderOctOverview();}
    }catch(error){
     if(action==="check_setup")ready=false;
     payInfo.textContent=error.message;
-   }finally{busy=false;paySetup.disabled=payStatus.disabled=false;payIssue.disabled=!canIssue();payResend.disabled=!ready||!eligible}
+   }finally{busy=false;setPaymentButtons()}
   }
   paySetup.onclick=()=>runPayPal("check_setup");
   payStatus.onclick=()=>runPayPal("status",true);
@@ -679,10 +729,11 @@ async function octOpenOrderWorkspace(orderId){
    runPayPal("issue");
   };
   payResend.onclick=()=>{
-   if(!ready||!eligible||busy||!window.confirm("O PayPal vai reenviar a fatura deste pedido ou emitir e enviar uma fatura de "+dollar.format(Number(order.quote_review.total))+" para "+customer.email+" se ainda não existir. Continuar?"))return;
+   if(!ready||!eligible()||busy||manualBusy||!window.confirm("O PayPal vai reenviar a fatura deste pedido ou emitir e enviar uma fatura de "+dollar.format(Number(order.quote_review.total))+" para "+customer.email+" se ainda não existir. Continuar?"))return;
    runPayPal("resend");
   };
   runPayPal("status");
+  loadPaymentHistory();
  }
 
  panel.querySelector("#octOpenCustomerPortal").onclick=()=>window.open("https://sr-lhama.github.io/oct/customer.html","_blank","noopener");
