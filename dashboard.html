@@ -347,7 +347,7 @@ const OCT_STAGES=[
  ["generated","Gerado"],["sent","Enviado"],["waiting","Aguardando resposta"],
  ["artwork_approval","Aprovação da arte"],["awaiting_payment","Aguardando pagamento"],
  ["payment_confirmed","Pagamento confirmado"],["in_progress","Em produção"],
- ["finished","Finalizado"],["delivered","Entregue"],["cancelled","Cancelado"]
+ ["finished","Finalizado"],["delivered","Entregue"],["not_converted","Não concretizado"],["cancelled","Cancelado"]
 ];
 
 /* OCT customer order workspace: original source details, internal pricing and mockup preparation. */
@@ -502,7 +502,7 @@ async function octOpenOrderWorkspace(orderId){
  '<p style="font-size:12px;color:#69798c">Suggested unit prices come from your saved commercial catalog. Verify the right quantity tier, print locations and DTF costs before approving. Nothing is sent automatically by saving.</p>'+
  '<div style="display:flex;gap:8px;flex-wrap:wrap;margin:9px 0">'+(match?.tiers||[]).map((v,i)=>'<button class="btn secondary octPriceTier" data-price="'+safe(v)+'">Catalog tier '+(i+1)+': '+dollar.format(Number(v))+'</button>').join('')+'</div>'+
  '<form id="octWorkspacePrice" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;align-items:end"><label style="font-size:12px">Price per piece (USD)<input name="unit" type="number" min="0" step="0.01" required value="'+(unitStart?unitStart.toFixed(2):"")+'" style="width:100%;padding:11px;border:1px solid #d2e0ec;border-radius:9px"></label><label style="font-size:12px">Sales tax (%)<input name="tax_rate" type="number" min="0" max="25" step="0.001" value="6.5" style="width:100%;padding:11px;border:1px solid #d2e0ec;border-radius:9px"></label><label style="font-size:12px">Shipping (USD)<input name="shipping" type="number" min="0" step="0.01" value="'+Number(estimate?.shipping||0).toFixed(2)+'" style="width:100%;padding:11px;border:1px solid #d2e0ec;border-radius:9px"></label><div><strong id="octWorkspaceTotal">Pending estimate</strong><div style="font-size:11px;color:#76879b">Total for '+qty+' pieces</div></div><button class="btn" type="submit">Save internal estimate</button></form>'+
- '<p id="octWorkspaceMessage" style="font-size:12px" role="status"></p><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn secondary" type="button" id="octSendEstimate" disabled>Send approved estimate by email</button><span style="font-size:12px;color:#758499;align-self:center">Save and validate pricing first; email delivery requires a configured provider.</span></div>'+
+ '<p id="octWorkspaceMessage" style="font-size:12px" role="status"></p><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn secondary" type="button" id="octSendEstimate" disabled>Send estimate and proof</button><span style="font-size:12px;color:#758499;align-self:center">Save pricing and an approval proof for every print position before sending.</span></div>'+
  '<div id="octPriorProofs" style="margin-top:16px"></div>';
  panel.querySelector("#octCloseWorkspace").onclick=close;
  panel.querySelector("#octOpenCustomerPortal").onclick=()=>window.open("https://sr-lhama.github.io/oct/customer.html","_blank","noopener");
@@ -519,8 +519,8 @@ async function octOpenOrderWorkspace(orderId){
  const calculate=()=>{
   const unit=Number(pricing.elements.unit.value||0),rate=Number(pricing.elements.tax_rate.value||0)/100,shipping=Number(pricing.elements.shipping.value||0);
   if(unit<=0){panel.querySelector("#octWorkspaceTotal").textContent="Price pending";return null}
-  const subtotal=Math.round(qty*unit*100)/100,tax=Math.round(subtotal*rate*100)/100,total=Math.round((subtotal+tax+shipping)*100)/100;
-  panel.querySelector("#octWorkspaceTotal").textContent=dollar.format(total);
+  const subtotal=Math.round((qty*unit+(quote?.needs_artwork?25:0))*100)/100,tax=Math.round(subtotal*rate*100)/100,total=Math.round((subtotal+tax+shipping)*100)/100;
+  panel.querySelector("#octWorkspaceTotal").textContent=dollar.format(total)+(quote?.needs_artwork?" · includes $25 artwork creation":"");
   return {unit,subtotal,tax,shipping,total};
  };
  pricing.querySelectorAll("input").forEach(x=>x.oninput=calculate);
