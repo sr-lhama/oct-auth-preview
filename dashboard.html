@@ -357,26 +357,106 @@ async function octLaunchArtStudio(order,quote,urls){
  const veil=document.createElement("div");veil.style.cssText="position:fixed;inset:0;z-index:410;background:#152338c9;display:grid;place-items:center;padding:14px;overflow:auto";
  const panel=document.createElement("section");panel.style.cssText="width:min(980px,100%);max-height:94vh;overflow:auto;background:white;border-radius:16px;padding:23px";
  veil.append(panel);document.body.append(veil);
- panel.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center;gap:12px"><h2>Artwork Studio · '+safe(order.order_number)+'</h2><button id="studioExit" class="btn secondary">Close</button></div><p style="font-size:12px;color:#64748b">Mockup for approval only. Final DTF artwork needs production review.</p><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:20px"><canvas width="640" height="640" id="studioCanvas" style="width:100%;border:1px solid #dae6f0;border-radius:12px"></canvas><div><label>Garment view<select id="studioSide" style="display:block;width:100%;padding:10px"><option value="front">Front</option><option value="back">Back</option></select></label><label style="display:block;margin:13px 0">Upload replacement PNG/JPG<input id="studioUpload" type="file" accept="image/png,image/jpeg,image/webp" style="display:block;margin:8px 0;width:100%"></label><label style="display:block">Horizontal placement<input id="studioX" type="range" min="10" max="90" value="50" style="display:block;width:100%"></label><label style="display:block">Vertical placement<input id="studioY" type="range" min="10" max="90" value="45" style="display:block;width:100%"></label><label style="display:block">Scale<input id="studioScale" type="range" min="5" max="65" value="30" style="display:block;width:100%"></label><p id="studioInfo" role="status" style="font-size:12px;min-height:44px">Loading original garment and artwork...</p><button id="studioDownload" class="btn secondary">Download PNG</button> <button id="studioSave" class="btn">Save approval proof</button></div></div>';
+ panel.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center;gap:12px"><h2>Artwork Studio · '+safe(order.order_number)+'</h2><button id="studioExit" class="btn secondary">Close</button></div><p style="font-size:12px;color:#64748b">Internal preview only. Request a higher-resolution file or quote artwork preparation separately if needed for production.</p><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:20px"><canvas width="640" height="640" id="studioCanvas" aria-label="Garment mockup preview" style="width:100%;touch-action:none;border:1px solid #dae6f0;border-radius:12px"></canvas><div><label>Garment view<select id="studioSide" style="display:block;width:100%;padding:10px"><option value="front">Front</option><option value="back">Back</option></select></label><label style="display:block;margin:13px 0">Upload replacement PNG/JPG<input id="studioUpload" type="file" accept="image/png,image/jpeg,image/webp" style="display:block;margin:8px 0;width:100%"></label><label style="display:block">Horizontal placement<input id="studioX" type="range" min="10" max="90" value="50" style="display:block;width:100%"></label><label style="display:block">Vertical placement<input id="studioY" type="range" min="10" max="90" value="45" style="display:block;width:100%"></label><label style="display:block">Scale<input id="studioScale" type="range" min="5" max="65" value="30" style="display:block;width:100%"></label><p style="font-size:12px;color:#64748b">Drag the artwork to move it. Drag the corner handle to resize, or use the sliders.</p><div style="display:flex;gap:8px;flex-wrap:wrap"><button id="studioRemoveBg" class="btn secondary" aria-pressed="false">Pick background</button><button id="studioRestoreBg" class="btn secondary" disabled>Restore artwork</button></div><label style="display:block;margin-top:10px">Background tolerance <input id="studioTolerance" type="range" min="0" max="110" value="35" style="display:block;width:100%"></label><p id="studioInfo" role="status" style="font-size:12px;min-height:44px">Loading original garment and artwork...</p><button id="studioDownload" class="btn secondary">Download preview PNG</button> <button id="studioSave" class="btn">Save approval proof</button></div></div>';
  const $=id=>panel.querySelector("#"+id),canvas=$("studioCanvas"),ctx=canvas.getContext("2d");
- const bases={},arts={};$("studioExit").onclick=()=>veil.remove();
+ const bases={},arts={},edits={},placements={};
+ let picking=false,gesture=null;
+ const uploadCount={front:0,back:0},tolerances={front:35,back:35};
+ $("studioExit").onclick=()=>veil.remove();
  veil.onclick=e=>{if(e.target===veil)veil.remove()};
  const getImage=src=>new Promise((resolve,reject)=>{const img=new Image();img.crossOrigin="anonymous";img.onload=()=>resolve(img);img.onerror=reject;img.src=src});
  const defaultPositions={"Left chest":[59,37,13],"Right chest":[41,37,13],"Both chest sides":[50,38,30],"Centered front":[50,46,28],"Full front":[50,51,38],"Below collar":[50,28,18],"Small back":[50,39,24],"Medium back":[50,45,33],"Full back":[50,48,40]};
- function resetPlacement(){
-  const side=$("studioSide").value;
-  const pos=defaultPositions[side==="front"?quote.front_print:quote.back_print]||[50,45,30];
-  $("studioX").value=pos[0];$("studioY").value=pos[1];$("studioScale").value=pos[2];
+ const fields=["studioX","studioY","studioScale"];
+ const activeSide=()=>$("studioSide").value;
+ const info=message=>{$("studioInfo").textContent=message};
+ const clamp=(n,min,max)=>Math.max(min,Math.min(max,n));
+ function bounds(side){
+  const artwork=edits[side]?.image||arts[side];
+  const [x,y,scale]=placements[side];
+  const width=640*scale/100,height=artwork?width*artwork.height/artwork.width:width;
+  return {x:640*x/100-width/2,y:640*y/100-height/2,width,height,artwork};
  }
- function draw(){
-  ctx.clearRect(0,0,640,640);ctx.fillStyle="white";ctx.fillRect(0,0,640,640);
-  const side=$("studioSide").value,b=bases[side],a=arts[side];
-  if(b){const k=Math.min(610/b.width,610/b.height),w=b.width*k,h=b.height*k;ctx.drawImage(b,(640-w)/2,(640-h)/2,w,h)}
-  else{ctx.fillStyle="#eef4f9";ctx.fillRect(25,25,590,590);ctx.fillStyle="#344259";ctx.font="18px Arial";ctx.fillText("Garment preview unavailable",185,325)}
-  const cx=640*Number($("studioX").value)/100,cy=640*Number($("studioY").value)/100,w=640*Number($("studioScale").value)/100;
-  if(a){const h=w*a.height/a.width;ctx.drawImage(a,cx-w/2,cy-h/2,w,h)}
-  else{ctx.setLineDash([8,5]);ctx.strokeStyle="#e32183";ctx.strokeRect(cx-w/2,cy-w/2,w,w);ctx.setLineDash([])}
-  ctx.fillStyle="#182d45";ctx.font="bold 14px Arial";ctx.fillText("ORLANDO CUSTOM TEES · "+side.toUpperCase(),16,626);
+ function render(context,side,showControls){
+  context.clearRect(0,0,640,640);context.fillStyle="white";context.fillRect(0,0,640,640);
+  const base=bases[side],box=bounds(side);
+  if(base){
+   const scale=Math.min(610/base.width,610/base.height),w=base.width*scale,h=base.height*scale;
+   context.drawImage(base,(640-w)/2,(640-h)/2,w,h);
+  }else{
+   context.fillStyle="#eef4f9";context.fillRect(25,25,590,590);
+   context.fillStyle="#344259";context.font="18px Arial";context.fillText("Garment preview unavailable",185,325);
+  }
+  if(box.artwork)context.drawImage(box.artwork,box.x,box.y,box.width,box.height);
+  if(showControls&&box.artwork){
+   context.strokeStyle="#00a7d9";context.lineWidth=2;
+   context.strokeRect(box.x,box.y,box.width,box.height);
+   context.fillStyle="#007ba3";
+   context.fillRect(box.x+box.width-7,box.y+box.height-7,14,14);
+  }
+  context.fillStyle="#182d45";context.font="bold 14px Arial";context.fillText("ORLANDO CUSTOM TEES · "+side.toUpperCase(),16,626);
+ }
+ function draw(){render(ctx,activeSide(),!picking)}
+ function syncControls(){
+  const side=activeSide();
+  fields.forEach((field,index)=>{$(field).value=placements[side][index]});
+  $("studioRestoreBg").disabled=!edits[side];
+  $("studioRemoveBg").disabled=!arts[side];
+  $("studioTolerance").value=tolerances[side];
+  canvas.style.cursor=picking?"crosshair":"default";
+  $("studioRemoveBg").setAttribute("aria-pressed",String(picking));
+  draw();
+ }
+ function point(event){
+  const rect=canvas.getBoundingClientRect();
+  return {x:(event.clientX-rect.left)*640/rect.width,y:(event.clientY-rect.top)*640/rect.height};
+ }
+ function removeMatchedBackground(side,selection,tolerance){
+  const source=arts[side],result=document.createElement("canvas"),factor=Math.min(1,1400/Math.max(source.width,source.height));
+  const w=result.width=Math.max(1,Math.round(source.width*factor));
+  const h=result.height=Math.max(1,Math.round(source.height*factor));
+  const work=result.getContext("2d",{willReadFrequently:true});
+  work.drawImage(source,0,0,w,h);
+  const pixels=work.getImageData(0,0,w,h),data=pixels.data;
+  const seed=clamp(Math.floor(selection.y*h),0,h-1)*w+clamp(Math.floor(selection.x*w),0,w-1);
+  if(data[seed*4+3]===0)throw Error("Pick an opaque background color.");
+  const red=data[seed*4],green=data[seed*4+1],blue=data[seed*4+2],limit=3*tolerance*tolerance;
+  const seen=new Uint8Array(w*h),queue=new Int32Array(w*h);
+  let head=0,tail=0;
+  function visit(i){
+   if(seen[i])return;
+   seen[i]=1;
+   const offset=i*4;
+   const distance=(data[offset]-red)**2+(data[offset+1]-green)**2+(data[offset+2]-blue)**2;
+   if(data[offset+3]!==0&&distance>limit)return;
+   data[offset+3]=0;
+   queue[tail++]=i;
+  }
+  visit(seed);
+  while(head<tail){
+   const i=queue[head++],x=i%w;
+   if(x>0)visit(i-1);
+   if(x<w-1)visit(i+1);
+   if(i>=w)visit(i-w);
+   if(i<w*(h-1))visit(i+w);
+  }
+  work.putImageData(pixels,0,0);
+  edits[side]={selection,tolerance,image:result};
+ }
+ function applyBackground(side,selection,tolerance){
+  try{
+   removeMatchedBackground(side,selection,tolerance);
+   info("Background removed in this preview. Restore artwork to undo.");
+  }catch(error){info("Background not changed: "+error.message)}
+  syncControls();
+ }
+ function proofCanvas(side){
+  const output=document.createElement("canvas");
+  output.width=output.height=640;
+  render(output.getContext("2d"),side,false);
+  return output;
+ }
+ for(const side of ["front","back"]){
+  placements[side]=[...(defaultPositions[side==="front"?quote.front_print:quote.back_print]||[50,45,30])];
  }
  try{
   const root="https://sr-lhama.github.io/oct/assets/catalog/catalogo_por_modelo.json";
@@ -393,22 +473,76 @@ async function octLaunchArtStudio(order,quote,urls){
  for(const side of ["front","back"]){
   if(urls[side+"Artwork"])arts[side]=await getImage(urls[side+"Artwork"]).catch(()=>null);
  }
- $("studioSide").onchange=()=>{resetPlacement();draw();$("studioInfo").textContent=arts[$("studioSide").value]?"Original customer artwork loaded.":"Upload artwork for this side."};
- for(const field of ["studioX","studioY","studioScale"])$(field).oninput=draw;
+ $("studioSide").onchange=()=>{
+  picking=false;gesture=null;syncControls();
+  info(arts[activeSide()]?"Artwork ready. Adjust the preview and save.":"Upload artwork for this side.");
+ };
+ fields.forEach((field,index)=>{$(field).oninput=()=>{
+  placements[activeSide()][index]=Number($(field).value);
+  draw();
+ }});
+ $("studioRemoveBg").onclick=()=>{
+  if(!arts[activeSide()])return;
+  picking=!picking;syncControls();
+  info(picking?"Click the background inside the artwork.":"Background selection cancelled.");
+ };
+ $("studioRestoreBg").onclick=()=>{
+  delete edits[activeSide()];picking=false;syncControls();
+  info("Original artwork restored in the preview.");
+ };
+ $("studioTolerance").onchange=()=>{
+  const side=activeSide(),edit=edits[side];
+  tolerances[side]=Number($("studioTolerance").value);
+  if(edit)applyBackground(side,edit.selection,tolerances[side]);
+ };
+ canvas.onpointerdown=event=>{
+  if(event.button!==0||gesture)return;
+  const side=activeSide(),box=bounds(side),p=point(event);
+  if(!box.artwork)return;
+  const inside=p.x>=box.x&&p.x<=box.x+box.width&&p.y>=box.y&&p.y<=box.y+box.height;
+  if(picking){
+   if(!inside){info("Click the background inside the artwork.");return}
+   picking=false;
+   applyBackground(side,{x:(p.x-box.x)/box.width,y:(p.y-box.y)/box.height},Number($("studioTolerance").value));
+   return;
+  }
+  const resize=Math.abs(p.x-box.x-box.width)<13&&Math.abs(p.y-box.y-box.height)<13;
+  if(!inside&&!resize)return;
+  gesture={pointer:event.pointerId,side,start:p,values:[...placements[side]],resize,ratio:box.height/box.width};
+  canvas.setPointerCapture(event.pointerId);
+  canvas.style.cursor=resize?"nwse-resize":"grabbing";
+ };
+ canvas.onpointermove=event=>{
+  if(!gesture||event.pointerId!==gesture.pointer)return;
+  const {side,start,values,resize,ratio}=gesture,p=point(event);
+  const dx=p.x-start.x,dy=p.y-start.y;
+  placements[side]=resize
+   ?[values[0],values[1],clamp(values[2]+200*(dx+ratio*dy)/(640*(1+ratio*ratio)),5,65)]
+   :[clamp(values[0]+dx*100/640,10,90),clamp(values[1]+dy*100/640,10,90),values[2]];
+  fields.forEach((field,index)=>{$(field).value=placements[side][index]});
+  draw();
+ };
+ canvas.onlostpointercapture=()=>{gesture=null;canvas.style.cursor=picking?"crosshair":"default"};
  $("studioUpload").onchange=async e=>{
   const file=e.target.files?.[0];if(!file)return;
+  const side=activeSide(),upload=++uploadCount[side];
   if(!["image/png","image/jpeg","image/webp"].includes(file.type)||file.size>15*1024*1024){$("studioInfo").textContent="Choose PNG/JPG/WebP under 15 MB";return}
   const url=URL.createObjectURL(file);
-  try{arts[$("studioSide").value]=await getImage(url);draw();$("studioInfo").textContent="Replacement artwork loaded."}
+  try{
+   const replacement=await getImage(url);
+   if(upload!==uploadCount[side])return;
+   arts[side]=replacement;delete edits[side];
+   if(side===activeSide()){picking=false;syncControls();info("Replacement artwork loaded for the preview.")}
+  }
   catch{$("studioInfo").textContent="Cannot read this image"}finally{URL.revokeObjectURL(url)}
  };
- $("studioDownload").onclick=()=>{try{const a=document.createElement("a");a.download=order.order_number+"-mockup.png";a.href=canvas.toDataURL("image/png");a.click()}catch{$("studioInfo").textContent="Cannot export this image"}};
+ $("studioDownload").onclick=()=>{try{const a=document.createElement("a");a.download=order.order_number+"-"+activeSide()+"-preview.png";a.href=proofCanvas(activeSide()).toDataURL("image/png");a.click()}catch{$("studioInfo").textContent="Cannot export this image"}};
  $("studioSave").onclick=async()=>{
   const side=$("studioSide").value;if(!arts[side]){$("studioInfo").textContent="Upload an artwork image before saving.";return}
   if(!confirm("Save this "+side+" mockup to include with the estimate?"))return;
   const button=$("studioSave");button.disabled=true;
   try{
-   const blob=await new Promise((resolve,reject)=>canvas.toBlob(x=>x?resolve(x):reject(Error("Cannot create PNG")),"image/png"));
+   const blob=await new Promise((resolve,reject)=>proofCanvas(side).toBlob(x=>x?resolve(x):reject(Error("Cannot create PNG")),"image/png"));
    const form=new FormData();form.append("order_id",order.id);form.append("position",side);form.append("proof",blob,"mockup.png");
    const {data,error}=await client.functions.invoke("oct-studio-proof",{body:form});
    if(error||!data?.ok)throw Error(data?.error||error?.message||"Upload rejected");
@@ -416,7 +550,7 @@ async function octLaunchArtStudio(order,quote,urls){
   }catch(err){$("studioInfo").textContent="Save failed: "+err.message}
   finally{button.disabled=false}
  };
- resetPlacement();draw();$("studioInfo").textContent=arts.front?"Front artwork ready. Adjust placement and save.":"Choose an artwork image to create the mockup.";
+ syncControls();$("studioInfo").textContent=arts.front?"Front artwork ready. Adjust placement and save.":"Choose an artwork image to create the mockup.";
 }
 
 
