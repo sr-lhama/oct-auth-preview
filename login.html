@@ -143,9 +143,10 @@ if (data.user) {
     return;
   }
 
-  if (profile.role === "admin") {
+  const canManageOrders = ["admin", "manager"].includes(profile.role);
+  if (canManageOrders) {
     message.textContent =
-      "Administrator access confirmed. Welcome, " +
+      (profile.role === "admin" ? "Administrator" : "Manager") + " access confirmed. Welcome, " +
       (profile.full_name || data.user.email) + "!";
   } else {
     message.textContent =
@@ -154,8 +155,8 @@ if (data.user) {
 
   form.hidden = true;
   const nextLink = document.getElementById("nextLink");
-  nextLink.href = profile.role === "admin" ? "dashboard.html" : "portal.html";
-  nextLink.textContent = profile.role === "admin" ? "Open Admin Dashboard" : "Track My Orders";
+  nextLink.href = canManageOrders ? "dashboard.html" : "portal.html";
+  nextLink.textContent = canManageOrders ? "Open Dashboard" : "Track My Orders";
   nextLink.style.display = "block";
 }
 
