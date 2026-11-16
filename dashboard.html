@@ -405,14 +405,14 @@ async function octLaunchArtStudio(order,quote,urls){
  $("studioDownload").onclick=()=>{try{const a=document.createElement("a");a.download=order.order_number+"-mockup.png";a.href=canvas.toDataURL("image/png");a.click()}catch{$("studioInfo").textContent="Cannot export this image"}};
  $("studioSave").onclick=async()=>{
   const side=$("studioSide").value;if(!arts[side]){$("studioInfo").textContent="Upload an artwork image before saving.";return}
-  if(!confirm("Save this "+side+" mockup for customer approval?"))return;
+  if(!confirm("Save this "+side+" mockup to include with the estimate?"))return;
   const button=$("studioSave");button.disabled=true;
   try{
    const blob=await new Promise((resolve,reject)=>canvas.toBlob(x=>x?resolve(x):reject(Error("Cannot create PNG")),"image/png"));
    const form=new FormData();form.append("order_id",order.id);form.append("position",side);form.append("proof",blob,"mockup.png");
    const {data,error}=await client.functions.invoke("oct-studio-proof",{body:form});
    if(error||!data?.ok)throw Error(data?.error||error?.message||"Upload rejected");
-   $("studioInfo").textContent="Proof saved. Customer can review it in My Account after email verification.";renderOctOverview();
+   $("studioInfo").textContent="Proof saved as a draft. Send the estimate and proof together when pricing is ready.";renderOctOverview();
   }catch(err){$("studioInfo").textContent="Save failed: "+err.message}
   finally{button.disabled=false}
  };
