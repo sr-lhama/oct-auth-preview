@@ -37,7 +37,7 @@ body{font-family:Inter,"Segoe UI",Arial,sans-serif;background:var(--bg);color:#2
 .stats{gap:15px;margin:0 0 24px}.stat{min-height:120px;border-color:#dce4ee;border-radius:13px;padding:22px;box-shadow:none}
 .stat span{font-size:11px}.stat strong{font-size:25px;color:#232937;margin:12px 0}.stat small{font-size:11px}
 .kanban-header{display:flex;justify-content:space-between;gap:10px;align-items:center;margin:0 0 17px;flex-wrap:wrap}
-.kanban-header h3{font-size:19px;margin:0}.oct-pipeline{display:grid;grid-template-columns:repeat(6,minmax(145px,1fr));gap:12px}
+.kanban-header h3{font-size:19px;margin:0}.oct-pipeline{display:grid;grid-template-columns:repeat(5,minmax(155px,1fr));gap:12px}
 .oct-stage{min-height:280px;background:#eaf0f6;border-radius:12px;padding:12px 10px}
 .oct-stage-title{display:flex;justify-content:space-between;align-items:center;font-size:10px;gap:5px;font-weight:700;min-height:30px;color:#394355}
 .oct-stage-title b{font-size:10px}.oct-stage-count{background:white;color:#97a7bc;border-radius:100%;min-width:20px;text-align:center;padding:3px 5px}
@@ -61,7 +61,6 @@ button:focus-visible,a:focus-visible{outline:2px solid #00b0e0;outline-offset:3p
 body.dark-mode{--bg:#151c27;--line:#38465a;color:#edf3fc}
 body.dark-mode .content{background:#151c27}body.dark-mode .sidebar,body.dark-mode .topbar,body.dark-mode .stat,body.dark-mode .panel,body.dark-mode .oct-order{background:#202b3a;color:#f2f5ff;border-color:#39465b}
 body.dark-mode .nav-btn{color:#b2bed0}body.dark-mode .oct-stage{background:#2a3647}body.dark-mode .oct-head h2,body.dark-mode .stat strong,body.dark-mode .topbar h1,body.dark-mode .user-info strong{color:white}body.dark-mode .oct-order strong{color:#fff}
-@media(max-width:1450px){.oct-pipeline{grid-template-columns:repeat(5,minmax(155px,1fr))}}
 @media(max-width:1180px){.oct-pipeline{grid-template-columns:repeat(3,minmax(150px,1fr))}.header-clock{display:none}}
 @media(max-width:720px){.sidebar{display:none}.topbar{padding:12px 16px}.topbar-actions{margin-left:0}.content{padding:20px 13px}.oct-head h2{font-size:23px}.oct-pipeline{grid-template-columns:repeat(2,minmax(140px,1fr))}.oct-stage{min-height:170px}.stats{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:400px){.oct-pipeline{grid-template-columns:1fr}}
@@ -346,7 +345,7 @@ function octInitializeSound(){
 const OCT_STAGES=[
  ["generated","Gerado"],["sent","Enviado"],["waiting","Aguardando resposta"],
  ["artwork_approval","Aprovação da arte"],["awaiting_payment","Aguardando pagamento"],
- ["payment_confirmed","Pagamento confirmado"],["in_progress","Em produção"],
+ ["in_progress","Em produção"],
  ["finished","Finalizado"],["delivered","Entregue"],["not_converted","Não concretizado"],["cancelled","Cancelado"]
 ];
 
@@ -893,7 +892,10 @@ async function renderOctOverview(){
  ];
  if(stats)stats.innerHTML=metrics.map(([label,value,sub])=>'<div class="stat"><span>'+safe(label)+'</span><strong>'+safe(value)+'</strong><small>'+safe(sub)+'</small></div>').join("");
  stageTarget.innerHTML=OCT_STAGES.map(([key,label])=>{
- const group=orders.filter(o=>o.status===key);
+ const group=orders.filter(o=>{
+  const stage=o.status==="payment_confirmed"?"in_progress":o.status;
+  return stage===key;
+ });
  const pending=key==='generated'?pendingQuotes:[];
  return '<section class="oct-stage" data-stage="'+key+'"><div class="oct-stage-title"><b>'+label+'</b><span class="oct-stage-count">'+(group.length+pending.length)+'</span></div>'+
  ((group.length+pending.length)?group.map(o=>{
