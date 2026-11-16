@@ -351,6 +351,74 @@ const OCT_STAGES=[
 ];
 
 /* OCT customer order workspace: original source details, internal pricing and mockup preparation. */
+
+async function octLaunchArtStudio(order,quote,urls){
+ if(!quote){alert("No linked website request for this order.");return}
+ const veil=document.createElement("div");veil.style.cssText="position:fixed;inset:0;z-index:410;background:#152338c9;display:grid;place-items:center;padding:14px;overflow:auto";
+ const panel=document.createElement("section");panel.style.cssText="width:min(980px,100%);max-height:94vh;overflow:auto;background:white;border-radius:16px;padding:23px";
+ veil.append(panel);document.body.append(veil);
+ panel.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center;gap:12px"><h2>Artwork Studio · '+safe(order.order_number)+'</h2><button id="studioExit" class="btn secondary">Close</button></div><p style="font-size:12px;color:#64748b">Mockup for approval only. Final DTF artwork needs production review.</p><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:20px"><canvas width="640" height="640" id="studioCanvas" style="width:100%;border:1px solid #dae6f0;border-radius:12px"></canvas><div><label>Garment view<select id="studioSide" style="display:block;width:100%;padding:10px"><option value="front">Front</option><option value="back">Back</option></select></label><label style="display:block;margin:13px 0">Upload replacement PNG/JPG<input id="studioUpload" type="file" accept="image/png,image/jpeg,image/webp" style="display:block;margin:8px 0;width:100%"></label><label style="display:block">Horizontal placement<input id="studioX" type="range" min="10" max="90" value="50" style="display:block;width:100%"></label><label style="display:block">Vertical placement<input id="studioY" type="range" min="10" max="90" value="45" style="display:block;width:100%"></label><label style="display:block">Scale<input id="studioScale" type="range" min="5" max="65" value="30" style="display:block;width:100%"></label><p id="studioInfo" role="status" style="font-size:12px;min-height:44px">Loading original garment and artwork...</p><button id="studioDownload" class="btn secondary">Download PNG</button> <button id="studioSave" class="btn">Save approval proof</button></div></div>';
+ const $=id=>panel.querySelector("#"+id),canvas=$("studioCanvas"),ctx=canvas.getContext("2d");
+ const bases={},arts={};$("studioExit").onclick=()=>veil.remove();
+ veil.onclick=e=>{if(e.target===veil)veil.remove()};
+ const getImage=src=>new Promise((resolve,reject)=>{const img=new Image();img.crossOrigin="anonymous";img.onload=()=>resolve(img);img.onerror=reject;img.src=src});
+ const defaultPositions={"Left chest":[59,37,13],"Right chest":[41,37,13],"Both chest sides":[50,38,30],"Centered front":[50,46,28],"Full front":[50,51,38],"Below collar":[50,28,18],"Small back":[50,39,24],"Medium back":[50,45,33],"Full back":[50,48,40]};
+ function resetPlacement(){
+  const side=$("studioSide").value;
+  const pos=defaultPositions[side==="front"?quote.front_print:quote.back_print]||[50,45,30];
+  $("studioX").value=pos[0];$("studioY").value=pos[1];$("studioScale").value=pos[2];
+ }
+ function draw(){
+  ctx.clearRect(0,0,640,640);ctx.fillStyle="white";ctx.fillRect(0,0,640,640);
+  const side=$("studioSide").value,b=bases[side],a=arts[side];
+  if(b){const k=Math.min(610/b.width,610/b.height),w=b.width*k,h=b.height*k;ctx.drawImage(b,(640-w)/2,(640-h)/2,w,h)}
+  else{ctx.fillStyle="#eef4f9";ctx.fillRect(25,25,590,590);ctx.fillStyle="#344259";ctx.font="18px Arial";ctx.fillText("Garment preview unavailable",185,325)}
+  const cx=640*Number($("studioX").value)/100,cy=640*Number($("studioY").value)/100,w=640*Number($("studioScale").value)/100;
+  if(a){const h=w*a.height/a.width;ctx.drawImage(a,cx-w/2,cy-h/2,w,h)}
+  else{ctx.setLineDash([8,5]);ctx.strokeStyle="#e32183";ctx.strokeRect(cx-w/2,cy-w/2,w,w);ctx.setLineDash([])}
+  ctx.fillStyle="#182d45";ctx.font="bold 14px Arial";ctx.fillText("ORLANDO CUSTOM TEES · "+side.toUpperCase(),16,626);
+ }
+ try{
+  const root="https://sr-lhama.github.io/oct/assets/catalog/catalogo_por_modelo.json";
+  const res=await fetch(root);
+  if(res.ok){
+   const catalog=await res.json(),model=quote.product.match(/(TT11L|TT11|TT21|6210|64000)/i)?.[1];
+   const product=catalog.products.find(p=>p.model.toUpperCase()===model?.toUpperCase()),color=product?.colors.find(c=>c.name===quote.color)||product?.colors?.[0];
+   for(const side of ["front","back"]){
+    const path=color?.views?.[side==="front"?"Front":"Back"];
+    if(path)bases[side]=await getImage(new URL(path,root).href).catch(()=>null);
+   }
+  }
+ }catch(err){console.warn("Garment image unavailable",err)}
+ for(const side of ["front","back"]){
+  if(urls[side+"Artwork"])arts[side]=await getImage(urls[side+"Artwork"]).catch(()=>null);
+ }
+ $("studioSide").onchange=()=>{resetPlacement();draw();$("studioInfo").textContent=arts[$("studioSide").value]?"Original customer artwork loaded.":"Upload artwork for this side."};
+ for(const field of ["studioX","studioY","studioScale"])$(field).oninput=draw;
+ $("studioUpload").onchange=async e=>{
+  const file=e.target.files?.[0];if(!file)return;
+  if(!["image/png","image/jpeg","image/webp"].includes(file.type)||file.size>15*1024*1024){$("studioInfo").textContent="Choose PNG/JPG/WebP under 15 MB";return}
+  const url=URL.createObjectURL(file);
+  try{arts[$("studioSide").value]=await getImage(url);draw();$("studioInfo").textContent="Replacement artwork loaded."}
+  catch{$("studioInfo").textContent="Cannot read this image"}finally{URL.revokeObjectURL(url)}
+ };
+ $("studioDownload").onclick=()=>{try{const a=document.createElement("a");a.download=order.order_number+"-mockup.png";a.href=canvas.toDataURL("image/png");a.click()}catch{$("studioInfo").textContent="Cannot export this image"}};
+ $("studioSave").onclick=async()=>{
+  const side=$("studioSide").value;if(!arts[side]){$("studioInfo").textContent="Upload an artwork image before saving.";return}
+  if(!confirm("Save this "+side+" mockup for customer approval?"))return;
+  const button=$("studioSave");button.disabled=true;
+  try{
+   const blob=await new Promise((resolve,reject)=>canvas.toBlob(x=>x?resolve(x):reject(Error("Cannot create PNG")),"image/png"));
+   const form=new FormData();form.append("order_id",order.id);form.append("position",side);form.append("proof",blob,"mockup.png");
+   const {data,error}=await client.functions.invoke("oct-studio-proof",{body:form});
+   if(error||!data?.ok)throw Error(data?.error||error?.message||"Upload rejected");
+   $("studioInfo").textContent="Proof saved. Customer can review it in My Account after email verification.";renderOctOverview();
+  }catch(err){$("studioInfo").textContent="Save failed: "+err.message}
+  finally{button.disabled=false}
+ };
+ resetPlacement();draw();$("studioInfo").textContent=arts.front?"Front artwork ready. Adjust placement and save.":"Choose an artwork image to create the mockup.";
+}
+
 async function octOpenPendingRequest(id){
  const {data:q,error}=await client.from("quote_requests").select("*").eq("id",id).maybeSingle();
  if(error||!q){window.alert("Não foi possível consultar a solicitação.");return}
