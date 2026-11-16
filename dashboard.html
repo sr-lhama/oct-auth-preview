@@ -49,6 +49,16 @@ dialog#octStageDialog{border:1px solid #d4e1ec;border-radius:14px;color:#25314a;
 .oct-stage-title b{font-size:10px}.oct-stage-count{background:white;color:#97a7bc;border-radius:100%;min-width:20px;text-align:center;padding:3px 5px}
 .oct-empty{text-align:center;margin:44px 3px;color:#8490a4;font-size:10px}
 .oct-order{display:block;background:white;text-align:left;width:100%;border:1px solid #dfe5ee;border-radius:10px;padding:13px;margin:8px 0;cursor:pointer;color:#34415b}
+.oct-pipeline-search{display:grid;gap:5px;margin:0 0 12px;max-width:480px}
+.oct-pipeline-search label{font-size:12px;font-weight:700}
+.oct-pipeline-search input{width:100%;min-height:38px}
+.oct-pipeline-search p{margin:0;font-size:12px}
+.oct-pipeline-search p:empty{display:none}
+.oct-pipeline .oct-order{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:4px 8px;padding:9px 10px;margin:5px 0;font-size:12px}
+.oct-order-number{font-weight:750;overflow-wrap:anywhere}
+.oct-order-deadline{font-size:11px}
+.oct-pipeline .oct-order[data-urgency="soon"]{background:#fff3c4;border-color:#c28c0a;color:#583e08}
+.oct-pipeline .oct-order[data-urgency="urgent"]{background:#ffe2e4;border-color:#c34651;color:#771b24}
 .oct-order:hover{border-color:#00a9de;box-shadow:0 3px 10px #15364a14}
 .oct-order small{display:block;color:#8492a7;font-size:9px;margin-bottom:9px}
 .oct-order strong{display:block;font-size:12px;color:#283244;margin-bottom:7px}.oct-order p{font-size:10px;color:#8a97a9;margin:4px 0 8px}.oct-order em{font-size:12px;color:#252d39;font-weight:750;font-style:normal}
@@ -988,6 +998,19 @@ function octOpenStageDialog(order,initial,workspace){
  });
  update();dialog.showModal();
 }
+function octPipelineDeadline(order,today){
+ if(["finished","delivered","cancelled","not_converted"].includes(order.status))return null;
+ const days=remainingBusinessDays(order.due_date,today);
+ if(days===null)return {label:"Sem prazo",urgency:""};
+ if(order.due_date<today){
+  return {label:days===0?"Em atraso":days===-1?"1 dia útil de atraso":Math.abs(days)+" dias úteis de atraso",urgency:"urgent"};
+ }
+ if(days===0)return {label:order.due_date===today?"Vence hoje":"Menos de 1 dia útil",urgency:"urgent"};
+ return {label:days===1?"Falta 1 dia útil":"Faltam "+days+" dias úteis",urgency:days<=1?"urgent":days<=3?"soon":""};
+}
+
+const octPipelineSearchText=value=>String(value??"").trim().toLowerCase();
+
 async function renderOctOverview(){
  const stats=document.querySelector("#octOverviewStats"),stageTarget=document.querySelector("#octPipeline");
  if(!stageTarget)return;
@@ -995,7 +1018,7 @@ async function renderOctOverview(){
  const [ordersResponse,ledgerResponse,quotesResponse]=await Promise.all([
  client.from("orders").select("id,legacy_id,order_number,status,total,created_at,legacy_payload,production_started_at,due_date,fulfillment_method,pickup_address,shipping_carrier,tracking_number,tracking_url").order("created_at",{ascending:false}).limit(500),
  manager?Promise.resolve({data:null}):client.from("oct_order_cash_summary").select("*").single(),
- manager?Promise.resolve({data:[]}):client.from("quote_requests").select("id,request_number,customer_name,company,product,quantity,status,created_at,converted_estimate_id,file_paths").order("created_at",{ascending:false}).limit(80)
+ manager?Promise.resolve({data:[]}):client.from("quote_requests").select("id,request_number,customer_name,company,email,product,quantity,status,created_at,converted_estimate_id,file_paths").order("created_at",{ascending:false}).limit(80)
  ]);
  if(ordersResponse.error){stageTarget.textContent="Não foi possível carregar os pedidos: "+ordersResponse.error.message;return}
  const orders=ordersResponse.data||[];
@@ -1010,30 +1033,63 @@ async function renderOctOverview(){
  ["Saldo registrado",amount(cash.balance),Number(cash.pending_fees)>0?"Saldo parcial · taxas PayPal pendentes":"Entradas menos saídas dos pedidos"]
  ];
  if(stats)stats.innerHTML=metrics.map(([label,value,sub])=>'<div class="stat"><span>'+safe(label)+'</span><strong>'+safe(value)+'</strong><small>'+safe(sub)+'</small></div>').join("");
- const scrollPositions=new Map(Array.from(stageTarget.querySelectorAll(".oct-stage-orders"),list=>[list.dataset.stageList,list.scrollTop]));
- stageTarget.innerHTML=OCT_STAGES.map(([key,label])=>{
-  const group=orders.filter(o=>(o.status==="payment_confirmed"?"in_progress":o.status)===key);
-  const pending=key==="generated"?pendingQuotes:[];
-  const count=group.length+pending.length;
-  const orderCards=group.map(o=>{
-   const detail=o.legacy_payload||{},raw=typeof detail.data==="string"?JSON.parse(detail.data):detail.data||{};
-   const price=typeof detail.pricing==="string"?JSON.parse(detail.pricing):detail.pricing||{};
-   const quantity=price.quantity??Object.values(raw.sizes||{}).reduce((n,v)=>n+Number(v||0),0);
-   return '<button type="button" class="oct-order" data-order="'+safe(o.id)+'"><small>'+safe(o.order_number||o.id)+'</small>'+
-    '<strong>'+safe(raw.company||raw.name||"Cliente")+'</strong>'+
-    '<p>'+safe(quantity)+' peças · '+safe(raw.productName||raw.productId||"Personalizado")+'</p>'+
-    '<em>'+(Number(o.total||0)>0?dollar.format(Number(o.total)):'Estimate pending')+'</em></button>';
+ const search=document.getElementById("octPipelineSearch");
+ const searchStatus=document.getElementById("octPipelineSearchStatus");
+ let searchTimer,searchRevision=0;
+ function drawPipeline(visibleOrders,visibleQuotes,keepScroll){
+  const today=octOrlandoDate();
+  const scrollPositions=new Map();
+  if(keepScroll)stageTarget.querySelectorAll(".oct-stage-orders").forEach(list=>scrollPositions.set(list.dataset.stageList,list.scrollTop));
+  stageTarget.innerHTML=OCT_STAGES.map(([key,label])=>{
+   const group=visibleOrders.filter(o=>(o.status==="payment_confirmed"?"in_progress":o.status)===key);
+   const pending=key==="generated"?visibleQuotes:[];
+   const count=group.length+pending.length;
+   const orderCards=group.map(order=>{
+    const deadline=octPipelineDeadline(order,today);
+    return '<button type="button" class="oct-order" data-order="'+safe(order.id)+'"'+(deadline?.urgency?' data-urgency="'+deadline.urgency+'"':'')+'>'+
+     '<span class="oct-order-number">'+safe(order.order_number||order.id)+'</span>'+
+     (deadline?'<span class="oct-order-deadline">'+safe(deadline.label)+'</span>':'')+'</button>';
+   }).join("");
+   const quoteCards=pending.map(q=>'<button type="button" class="oct-order" data-pending-quote="'+safe(q.id)+'"><span class="oct-order-number">'+safe(q.request_number)+'</span><span class="oct-order-deadline">Sem prazo</span></button>').join("");
+   return '<section class="oct-stage" data-stage="'+key+'"><div class="oct-stage-title"><b>'+safe(label)+'</b><span class="oct-stage-count">'+count+'</span></div>'+
+    (count?'<div class="oct-stage-orders" data-stage-list="'+key+'" role="group" aria-label="'+safe(label)+'" tabindex="0">'+orderCards+quoteCards+'</div>':'<div class="oct-empty">Nenhum pedido nesta etapa</div>')+
+    '</section>';
   }).join("");
-  const quoteCards=pending.map(q=>'<button type="button" class="oct-order" data-pending-quote="'+safe(q.id)+'"><small>'+safe(q.request_number)+' · WEBSITE</small><strong>'+safe(q.company||q.customer_name)+'</strong><p>'+safe(q.quantity)+' peças · '+safe(q.product)+'</p><em>Aguardando orçamento</em></button>').join("");
-  return '<section class="oct-stage" data-stage="'+key+'"><div class="oct-stage-title"><b>'+safe(label)+'</b><span class="oct-stage-count">'+count+'</span></div>'+
-   (count?'<div class="oct-stage-orders" data-stage-list="'+key+'" role="group" aria-label="'+safe(label)+'" tabindex="0">'+orderCards+quoteCards+'</div>':'<div class="oct-empty">Nenhum pedido nesta etapa</div>')+
-   '</section>';
- }).join("");
- stageTarget.querySelectorAll("[data-pending-quote]").forEach(b=>b.onclick=()=>octOpenPendingRequest(b.dataset.pendingQuote));
- stageTarget.querySelectorAll("[data-order]").forEach(b=>b.onclick=()=>octOpenOrderWorkspace(b.dataset.order));
- stageTarget.querySelectorAll(".oct-stage-orders").forEach(list=>{
-  list.scrollTop=scrollPositions.get(list.dataset.stageList)||0;
- });
+  stageTarget.querySelectorAll("[data-pending-quote]").forEach(b=>b.onclick=()=>octOpenPendingRequest(b.dataset.pendingQuote));
+  stageTarget.querySelectorAll("[data-order]").forEach(b=>b.onclick=()=>octOpenOrderWorkspace(b.dataset.order));
+  stageTarget.querySelectorAll(".oct-stage-orders").forEach(list=>{list.scrollTop=scrollPositions.get(list.dataset.stageList)||0});
+ }
+ function queueSearch(){
+  clearTimeout(searchTimer);
+  const revision=++searchRevision;
+  const query=octPipelineSearchText(search.value);
+  if(!query){
+   searchStatus.textContent="";
+   drawPipeline(orders,pendingQuotes,false);
+   return;
+  }
+  searchStatus.textContent="Buscando…";
+  searchTimer=setTimeout(async()=>{
+   const matches=(...fields)=>fields.some(field=>octPipelineSearchText(field).includes(query));
+   const {data,error}=orders.length?await client.rpc("oct_pipeline_matching_orders",{p_ids:orders.map(o=>o.id),p_query:query}):{data:[]};
+   if(revision!==searchRevision||search.oninput!==queueSearch||!stageTarget.isConnected)return;
+   const customerMatches=new Set(data||[]);
+   const visibleOrders=orders.filter(order=>{
+    if(customerMatches.has(order.id)||matches(order.order_number,order.legacy_id))return true;
+    const raw=order.legacy_payload?.data;
+    let details=raw;
+    if(typeof raw==="string"){try{details=JSON.parse(raw)}catch{details=null}}
+    return matches(details?.name,details?.company,details?.email);
+   });
+   const visibleQuotes=pendingQuotes.filter(q=>matches(q.request_number,q.customer_name,q.company,q.email));
+   drawPipeline(visibleOrders,visibleQuotes,false);
+   const count=visibleOrders.length+visibleQuotes.length;
+   searchStatus.textContent=error?"Busca parcial. Dados do cadastro do cliente indisponíveis.":count===1?"1 resultado":count+" resultados";
+  },250);
+ }
+ search.oninput=queueSearch;
+ if(search.value.trim())queueSearch();
+ else drawPipeline(orders,pendingQuotes,true);
  const refresh=document.getElementById("refreshOverview");
  if(refresh)refresh.onclick=renderOctOverview;
  const add=document.getElementById("addEstimate");
@@ -1064,7 +1120,7 @@ function showPage(id){
  content='<div class="oct-head"><div><small>ORLANDO CUSTOM TEES · GESTÃO</small><h2>Seu negócio, em movimento.</h2></div><button class="btn secondary" id="refreshOverview" type="button">↻ Atualizar</button></div>'+
  '<div class="stats" id="octOverviewStats"><div class="stat"><span>Estimates cadastrados</span><strong>…</strong></div><div class="stat"><span>Em produção</span><strong>…</strong></div><div class="stat"><span>Recebimentos registrados</span><strong>…</strong></div><div class="stat"><span>Saldo registrado</span><strong>…</strong></div></div>'+
 
- '<section class="oct-workspace-card"><div class="kanban-header"><h3>Pipeline de pedidos</h3><div><button type="button" class="btn secondary" id="launchStudio">✦ Estúdio de Arte</button> <button type="button" class="btn" id="addEstimate">+ Criar estimate</button></div></div><div id="octPipeline" class="oct-pipeline"><p>Carregando pedidos reais...</p></div></section>'+
+ '<section class="oct-workspace-card"><div class="kanban-header"><h3>Pipeline de pedidos</h3><div><button type="button" class="btn secondary" id="launchStudio">✦ Estúdio de Arte</button> <button type="button" class="btn" id="addEstimate">+ Criar estimate</button></div></div><div class="oct-pipeline-search"><label for="octPipelineSearch">Buscar no pipeline</label><input id="octPipelineSearch" type="search" placeholder="Nome, e-mail ou número do pedido" maxlength="254" autocomplete="off"><p id="octPipelineSearchStatus" role="status"></p></div><div id="octPipeline" class="oct-pipeline"><p>Carregando pedidos reais...</p></div></section>'+
  '<p class="footer-note">Painel conectado ao Supabase. Histórico original preservado. Pagamentos somente após verificação externa.</p>';
  }else{
  const d=moduleDesc[id];
@@ -1097,15 +1153,20 @@ function addBusinessDays(start,days){
  while(remaining>0){d.setUTCDate(d.getUTCDate()+1);if(d.getUTCDay()!==0&&d.getUTCDay()!==6)remaining--}
  return d.toISOString().slice(0,10);
 }
-function remainingBusinessDays(dueDate){
+function octOrlandoDate(){
+ const parts=new Intl.DateTimeFormat("sv-SE",{timeZone:"America/New_York",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
+ return parts;
+}
+
+function remainingBusinessDays(dueDate,localDate){
  if(!dueDate)return null;
- const today=new Date();today.setUTCHours(12,0,0,0);
+ const today=new Date((localDate||octOrlandoDate())+"T12:00:00Z");
  const due=new Date(dueDate+"T12:00:00Z");
  if(!Number.isFinite(+due))return null;
  let days=0;
  if(due>=today){for(let d=new Date(today);d<due;){d.setUTCDate(d.getUTCDate()+1);if(d.getUTCDay()!==0&&d.getUTCDay()!==6)days++}}
  else{for(let d=new Date(due);d<today;){d.setUTCDate(d.getUTCDate()+1);if(d.getUTCDay()!==0&&d.getUTCDay()!==6)days--}}
- return due>=today?days:-days;
+ return days;
 }
 
 const formatValue=(key,value)=>{
