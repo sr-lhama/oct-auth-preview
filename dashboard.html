@@ -37,7 +37,10 @@ body{font-family:Inter,"Segoe UI",Arial,sans-serif;background:var(--bg);color:#2
 .stats{gap:15px;margin:0 0 24px}.stat{min-height:120px;border-color:#dce4ee;border-radius:13px;padding:22px;box-shadow:none}
 .stat span{font-size:11px}.stat strong{font-size:25px;color:#232937;margin:12px 0}.stat small{font-size:11px}
 .kanban-header{display:flex;justify-content:space-between;gap:10px;align-items:center;margin:0 0 17px;flex-wrap:wrap}
-.kanban-header h3{font-size:19px;margin:0}.oct-pipeline{display:grid;grid-template-columns:repeat(5,minmax(155px,1fr));gap:12px}
+.kanban-header h3{font-size:19px;margin:0}.oct-pipeline-card{margin-top:9px}.oct-pipeline-card .oct-order{margin:0}.oct-pipeline-actions{display:flex;flex-wrap:wrap;gap:5px;margin-top:5px}.oct-pipeline-actions .btn{min-height:0;padding:5px 7px;font-size:11px}
+dialog#recordEditor{border:1px solid #d4e1ec;border-radius:14px;color:#25314a;padding:22px;width:min(520px,calc(100% - 28px));max-height:90vh}dialog#recordEditor::backdrop{background:#0e1c35bd}dialog#recordEditor label{display:grid;gap:4px;margin:8px 0}dialog#recordEditor [hidden]{display:none!important}
+.oct-manager :is(.sidebar,.mobile-nav,.header-clock,#hideMenu,#startShift,#workHoursNav,#newEstimateNav,#myOrdersNav,#octSoundsToggle,#octSoundSettingsToggle,#darkModeToggle,#octOverviewStats,#launchStudio,#addEstimate){display:none!important}
+.oct-pipeline{display:grid;grid-template-columns:repeat(5,minmax(155px,1fr));gap:12px}
 .oct-stage{min-height:280px;background:#eaf0f6;border-radius:12px;padding:12px 10px}
 .oct-stage-title{display:flex;justify-content:space-between;align-items:center;font-size:10px;gap:5px;font-weight:700;min-height:30px;color:#394355}
 .oct-stage-title b{font-size:10px}.oct-stage-count{background:white;color:#97a7bc;border-radius:100%;min-width:20px;text-align:center;padding:3px 5px}
@@ -870,13 +873,87 @@ async function octOpenOrderWorkspace(orderId){
  panel.querySelector("#octLaunchStudio").onclick=()=>octLaunchArtStudio(order,quote,originalUrls);
 }
 
+
+const octShippingLinks={
+ USPS:"https://tools.usps.com/go/TrackConfirmAction?tLabels=",
+ UPS:"https://www.ups.com/track?loc=en_US&tracknum=",
+ FedEx:"https://www.fedex.com/fedextrack/?trknbr=",
+ DHL:"https://www.dhl.com/us-en/home/tracking.html?tracking-id="
+};
+function octOpenStageDialog(order,initial){
+ closeEditor();
+ const dialog=document.createElement("dialog");
+ dialog.id="recordEditor";
+ dialog.setAttribute("aria-labelledby","octStageTitle");
+ dialog.innerHTML='<form><div class="kanban-header"><h3 id="octStageTitle">Alterar status</h3><button class="btn secondary" type="button" data-close>Fechar</button></div>'+
+  '<p>'+safe(order.order_number||order.id)+'</p>'+
+  '<label>Novo status<select name="stage" required>'+OCT_STAGES.map(([key,label])=>'<option value="'+key+'">'+label+'</option>').join("")+'</select></label>'+
+  '<div data-finish hidden><label>Como o cliente vai receber?<select name="method"><option value="pickup">Retirada</option><option value="shipping">Envio</option></select></label>'+
+  '<label data-pickup>Endereço para retirada<input name="address" maxlength="250" value="'+safe(order.pickup_address||"7463 Clarcona Ocoee Rd, Orlando, FL 32818")+'"></label>'+
+  '<div data-shipping hidden><label>Transportadora<select name="carrier"><option>USPS</option><option>UPS</option><option>FedEx</option><option>DHL</option><option value="other">Outra</option></select></label>'+
+  '<label data-other hidden>Nome da transportadora<input name="carrierName" maxlength="60"></label><label>Código de rastreio<input name="tracking" maxlength="80"></label>'+
+  '<label data-other hidden>Link HTTPS de rastreio<input name="trackingUrl" type="url" maxlength="500"></label></div></div>'+
+  '<p data-delivery hidden>O cliente receberá um agradecimento e um convite para avaliar a compra.</p>'+
+  '<p data-feedback role="alert"></p><button type="submit" class="btn">Salvar status</button></form>';
+ document.body.append(dialog);
+ const form=dialog.querySelector("form"),fields=form.elements,submit=form.querySelector('[type="submit"]');
+ fields.stage.value=initial||(order.status==="payment_confirmed"?"in_progress":order.status);
+ fields.method.value=order.fulfillment_method||"pickup";
+ if(order.shipping_carrier){
+  fields.carrier.value=Object.hasOwn(octShippingLinks,order.shipping_carrier)?order.shipping_carrier:"other";
+  fields.carrierName.value=fields.carrier.value==="other"?order.shipping_carrier:"";
+ }
+ fields.tracking.value=order.tracking_number||"";
+ fields.trackingUrl.value=order.tracking_url||"";
+ function update(){
+  const finish=fields.stage.value==="finished"&&order.status!=="finished";
+  const ship=finish&&fields.method.value==="shipping";
+  const other=ship&&fields.carrier.value==="other";
+  dialog.querySelector("[data-finish]").hidden=!finish;
+  dialog.querySelector("[data-pickup]").hidden=!finish||ship;
+  dialog.querySelector("[data-shipping]").hidden=!ship;
+  dialog.querySelectorAll("[data-other]").forEach(el=>el.hidden=!other);
+  dialog.querySelector("[data-delivery]").hidden=fields.stage.value!=="delivered"||order.status==="delivered";
+  fields.address.required=finish&&!ship;fields.tracking.required=ship;
+  fields.carrierName.required=other;fields.trackingUrl.required=other;fields.trackingUrl.disabled=!other;
+  submit.disabled=fields.stage.value===order.status;
+ }
+ form.addEventListener("change",update);
+ dialog.querySelector("[data-close]").onclick=()=>dialog.close();
+ dialog.addEventListener("close",()=>dialog.remove());
+ form.addEventListener("submit",async event=>{
+  event.preventDefault();
+  submit.disabled=true;
+  const feedback=dialog.querySelector("[data-feedback]");
+  feedback.textContent="Salvando…";
+  const args={p_order:order.id,p_expected:order.status,p_status:fields.stage.value};
+  if(args.p_status==="finished"){
+   args.p_method=fields.method.value;
+   if(args.p_method==="pickup")args.p_address=fields.address.value.trim();
+   else{
+    args.p_tracking=fields.tracking.value.trim();
+    const carrier=fields.carrier.value;
+    args.p_carrier=carrier==="other"?fields.carrierName.value.trim():carrier;
+    args.p_url=carrier==="other"?fields.trackingUrl.value.trim():octShippingLinks[carrier]+encodeURIComponent(args.p_tracking);
+   }
+  }
+  try{
+   const {error}=await client.rpc("oct_change_order_stage",args);
+   if(error)throw error;
+   dialog.close();
+   await renderOctOverview();
+  }catch(error){feedback.textContent=error.message||"Não foi possível salvar o status.";submit.disabled=false;}
+ });
+ update();dialog.showModal();
+}
 async function renderOctOverview(){
  const stats=document.querySelector("#octOverviewStats"),stageTarget=document.querySelector("#octPipeline");
  if(!stageTarget)return;
+ const manager=profile?.role==="manager";
  const [ordersResponse,ledgerResponse,quotesResponse]=await Promise.all([
- client.from("orders").select("id,legacy_id,order_number,status,total,created_at,legacy_payload,production_started_at,due_date").order("created_at",{ascending:false}).limit(500),
- client.from("oct_order_cash_summary").select("*").single(),
- client.from("quote_requests").select("id,request_number,customer_name,company,product,quantity,status,created_at,converted_estimate_id,file_paths").order("created_at",{ascending:false}).limit(80)
+ client.from("orders").select("id,legacy_id,order_number,status,total,created_at,legacy_payload,production_started_at,due_date,fulfillment_method,pickup_address,shipping_carrier,tracking_number,tracking_url").order("created_at",{ascending:false}).limit(500),
+ manager?Promise.resolve({data:null}):client.from("oct_order_cash_summary").select("*").single(),
+ manager?Promise.resolve({data:[]}):client.from("quote_requests").select("id,request_number,customer_name,company,product,quantity,status,created_at,converted_estimate_id,file_paths").order("created_at",{ascending:false}).limit(80)
  ]);
  if(ordersResponse.error){stageTarget.textContent="Não foi possível carregar os pedidos: "+ordersResponse.error.message;return}
  const orders=ordersResponse.data||[];
@@ -902,14 +979,19 @@ async function renderOctOverview(){
   const detail=o.legacy_payload||{},raw=typeof detail.data==="string"?JSON.parse(detail.data):detail.data||{};
   const price=typeof detail.pricing==="string"?JSON.parse(detail.pricing):detail.pricing||{};
   const quantity=price.quantity??Object.values(raw.sizes||{}).reduce((n,v)=>n+Number(v||0),0);
-  return '<button type="button" class="oct-order" data-order="'+safe(o.id)+'"><small>'+safe(o.order_number||o.id)+'</small>'+
+  return '<div class="oct-pipeline-card">'+(manager?'<div class="oct-order">':'<button type="button" class="oct-order" data-order="'+safe(o.id)+'">')+'<small>'+safe(o.order_number||o.id)+'</small>'+
     '<strong>'+safe(raw.company||raw.name||"Cliente")+'</strong>'+
     '<p>'+safe(quantity)+' peças · '+safe(raw.productName||raw.productId||"Personalizado")+'</p>'+
-    '<em>'+(Number(o.total||0)>0?dollar.format(Number(o.total)):'Estimate pending')+'</em></button>';
+    '<em>'+(Number(o.total||0)>0?dollar.format(Number(o.total)):'Estimate pending')+'</em>'+(manager?'</div>':'</button>')+
+    '<div class="oct-pipeline-actions"><button type="button" class="btn secondary" data-stage-order="'+safe(o.id)+'">Alterar status</button>'+
+    (key==="in_progress"?'<button type="button" class="btn" data-stage-order="'+safe(o.id)+'" data-stage-next="finished">Pedido finalizado</button>':
+     key==="finished"?'<button type="button" class="btn" data-stage-order="'+safe(o.id)+'" data-stage-next="delivered">'+(o.fulfillment_method==="pickup"?"Confirmar retirada":"Confirmar entrega")+'</button>':"")+'</div></div>';
  }).join('')+pending.map(q=>'<button type="button" class="oct-order" data-pending-quote="'+safe(q.id)+'"><small>'+safe(q.request_number)+' · WEBSITE</small><strong>'+safe(q.company||q.customer_name)+'</strong><p>'+safe(q.quantity)+' peças · '+safe(q.product)+'</p><em>Aguardando orçamento</em></button>').join(''):'<div class="oct-empty">Nenhum pedido nesta etapa</div>')+'</section>';
  }).join("");
  stageTarget.querySelectorAll("[data-pending-quote]").forEach(b=>b.onclick=()=>octOpenPendingRequest(b.dataset.pendingQuote));
  stageTarget.querySelectorAll("[data-order]").forEach(b=>b.onclick=()=>octOpenOrderWorkspace(b.dataset.order));
+ const ordersById=new Map(orders.map(o=>[o.id,o]));
+ stageTarget.querySelectorAll("[data-stage-order]").forEach(b=>b.onclick=()=>octOpenStageDialog(ordersById.get(b.dataset.stageOrder),b.dataset.stageNext));
  const refresh=document.getElementById("refreshOverview");
  if(refresh)refresh.onclick=renderOctOverview;
  const add=document.getElementById("addEstimate");
@@ -932,7 +1014,7 @@ function nav(){
  if(create)create.onclick=()=>{showPage("estimates");setTimeout(()=>document.querySelector("#newEntry")?.click(),400)};
 }
 function showPage(id){
- if(!pages.some(p=>p.id===id))id="overview";
+ if(profile?.role==="manager"||!pages.some(p=>p.id===id))id="overview";
  document.querySelectorAll("[data-page]").forEach(b=>b.setAttribute("aria-current",b.dataset.page===id?"page":"false"));
  document.getElementById("pageTitle").textContent=pages.find(p=>p.id===id).label;
  let content;
@@ -1503,11 +1585,17 @@ async function start(){
  if(userErr||!userData.user){showGate("Sign in required","Please sign in with your Orlando Custom Tees account to access administration.",true);return;}
  const {data:profileData,error:profileErr}=await client.from("profiles").select("full_name,role").eq("id",userData.user.id).single();
  if(profileErr||!profileData){showGate("Permission check failed","The administrator profile could not be verified. No business data has been loaded.",false);return;}
- if(profileData.role!=="admin"){showGate("Access restricted","This dashboard is reserved for authorized Orlando Custom Tees administrators.",false);return;}
+ if(!["admin","manager"].includes(profileData.role)){showGate("Access restricted","This dashboard is reserved for authorized Orlando Custom Tees administrators and managers.",false);return;}
  currentUser=userData.user;profile=profileData;
  document.getElementById("displayName").textContent=profile.full_name||"Administrator";
  document.getElementById("displayEmail").textContent=currentUser.email||"";
- nav();gate.hidden=true;app.hidden=false;
+ gate.hidden=true;app.hidden=false;
+ if(profile.role==="manager"){
+  document.body.classList.add("oct-manager");
+  showPage("overview");
+  return;
+ }
+ nav();
  octInitializeSound();
  document.getElementById("hideMenu")?.addEventListener("click",()=>{
  const sidebar=document.querySelector(".sidebar");if(!sidebar)return;
