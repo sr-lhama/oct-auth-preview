@@ -359,6 +359,7 @@ async function renderOctOverview(){
  ]);
  if(ordersResponse.error){stageTarget.textContent="Não foi possível carregar os pedidos: "+ordersResponse.error.message;return}
  const orders=ordersResponse.data||[];
+ const pendingQuotes=(quotesResponse.data||[]).filter(q=>!q.converted_estimate_id&&q.status!=='converted');
 
  const incomingEl=document.getElementById("octIncomingQuotes");
  if(incomingEl){
@@ -387,8 +388,9 @@ async function renderOctOverview(){
  if(stats)stats.innerHTML=metrics.map(([label,value,sub])=>'<div class="stat"><span>'+safe(label)+'</span><strong>'+safe(value)+'</strong><small>'+safe(sub)+'</small></div>').join("");
  stageTarget.innerHTML=OCT_STAGES.map(([key,label])=>{
  const group=orders.filter(o=>o.status===key);
- return '<section class="oct-stage" data-stage="'+key+'"><div class="oct-stage-title"><b>'+label+'</b><span class="oct-stage-count">'+group.length+'</span></div>'+
- (group.length?group.map(o=>{
+ const pending=key==='generated'?pendingQuotes:[];
+ return '<section class="oct-stage" data-stage="'+key+'"><div class="oct-stage-title"><b>'+label+'</b><span class="oct-stage-count">'+(group.length+pending.length)+'</span></div>'+
+ ((group.length+pending.length)?group.map(o=>{
   const detail=o.legacy_payload||{},raw=typeof detail.data==="string"?JSON.parse(detail.data):detail.data||{};
   const price=typeof detail.pricing==="string"?JSON.parse(detail.pricing):detail.pricing||{};
   const quantity=price.quantity??Object.values(raw.sizes||{}).reduce((n,v)=>n+Number(v||0),0);
@@ -396,8 +398,9 @@ async function renderOctOverview(){
     '<strong>'+safe(raw.company||raw.name||"Cliente")+'</strong>'+
     '<p>'+safe(quantity)+' peças · '+safe(raw.productName||raw.productId||"Personalizado")+'</p>'+
     '<em>'+(Number(o.total||0)>0?dollar.format(Number(o.total)):'Estimate pending')+'</em></button>';
- }).join(""):'<div class="oct-empty">Nenhum pedido nesta etapa</div>')+'</section>';
+ }).join('')+pending.map(q=>'<button type="button" class="oct-order" data-pending-quote="'+safe(q.id)+'"><small>'+safe(q.request_number)+' · WEBSITE</small><strong>'+safe(q.company||q.customer_name)+'</strong><p>'+safe(q.quantity)+' peças · '+safe(q.product)+'</p><em>Aguardando orçamento</em></button>').join(''):'<div class="oct-empty">Nenhum pedido nesta etapa</div>')+'</section>';
  }).join("");
+ stageTarget.querySelectorAll("[data-pending-quote]").forEach(b=>b.onclick=()=>showPage("inbox"));
  stageTarget.querySelectorAll("[data-order]").forEach(b=>b.onclick=async()=>{
   const selected=orders.find(o=>o.id===b.dataset.order);if(!selected)return;
   closeEditor();
