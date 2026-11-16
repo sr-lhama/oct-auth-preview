@@ -638,8 +638,75 @@ async function octOpenOrderWorkspace(orderId){
  '<form id="octWorkspacePrice" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;align-items:end"><label style="font-size:12px">Price per piece (USD)<input name="unit" type="number" min="0" step="0.01" required value="'+(unitStart?unitStart.toFixed(2):"")+'" style="width:100%;padding:11px;border:1px solid #d2e0ec;border-radius:9px"></label><label style="font-size:12px">Sales tax (%)<input name="tax_rate" type="number" min="0" max="25" step="0.001" value="6.5" style="width:100%;padding:11px;border:1px solid #d2e0ec;border-radius:9px"></label><label style="font-size:12px">Shipping (USD)<input name="shipping" type="number" min="0" step="0.01" value="'+Number(estimate?.shipping||0).toFixed(2)+'" style="width:100%;padding:11px;border:1px solid #d2e0ec;border-radius:9px"></label><div><strong id="octWorkspaceTotal">Pending estimate</strong><div style="font-size:11px;color:#76879b">Total for '+qty+' pieces</div></div><button class="btn" type="submit">Save internal estimate</button></form>'+
  '<p id="octWorkspaceMessage" style="font-size:12px" role="status"></p><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn secondary" type="button" id="octSendEstimate" disabled>Send estimate and proof</button><span style="font-size:12px;color:#758499;align-self:center">Save pricing and an approval proof for every print position before sending.</span></div>'+
  (order.quote_review?.decision==="approved"?'<section style="margin-top:18px;padding:14px;border:1px solid #d2e3ef;border-radius:10px"><h3>PayPal Live</h3><p>Destinatário: <strong>'+safe(customer?.email||"—")+'</strong> · Total aprovado: <strong>'+dollar.format(Number(order.quote_review.total))+'</strong></p><div style="display:flex;gap:8px;flex-wrap:wrap"><button type="button" class="btn secondary" id="octPayPalSetup">Verificar conexão Live</button><button type="button" class="btn secondary" id="octPayPalStatus">Consultar pagamento</button><button type="button" class="btn" id="octPayPalIssue" disabled>Emitir e enviar fatura Live</button><button type="button" class="btn secondary" id="octPayPalResend" disabled>Reenviar fatura</button><button type="button" class="btn secondary" id="octRecordManualPayment" disabled>Registrar pagamento</button></div><p id="octPayPalInfo" role="status" style="margin-bottom:0">Confira a conexão antes de emitir.</p><form id="octManualPaymentForm" hidden style="margin-top:13px;padding:12px;border:1px solid #d2e3ef;border-radius:8px"><h4 style="margin:0 0 10px">Pagamento recebido fora do PayPal</h4><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(165px,1fr));gap:10px"><label>Forma de pagamento<select name="method" required style="display:block;width:100%;padding:8px"><option value="">Selecione</option><option value="cash">Cash (dinheiro)</option><option value="zelle">Zelle</option></select></label><label>Valor recebido (USD)<input name="amount" type="number" min="0.01" step="0.01" required style="display:block;width:100%;padding:8px"></label><label>Referência (opcional)<input name="reference" maxlength="200" placeholder="Ex.: confirmação Zelle" style="display:block;width:100%;padding:8px"></label></div><p id="octManualPayWarning" style="font-size:12px"></p><button type="submit" class="btn">Salvar pagamento</button> <button type="button" class="btn secondary" id="octManualPayCancel">Cancelar</button></form><p id="octManualPayInfo" role="status" style="font-size:13px;margin-bottom:0"></p><div id="octPaymentHistory" style="margin-top:13px"></div></section>':"")+
+ '<section id="octProductionPurchases" hidden style="margin-top:18px;padding:14px;border:1px solid #d2e3ef;border-radius:10px"><h3>Compras da produção</h3><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:12px">'+
+ [["garments","Camisetas · S&amp;S Activewear"],["dtf","DTF"]].map(([kind,label])=>'<form data-supply-kind="'+kind+'" style="border:1px solid #e3edf4;padding:12px;border-radius:8px;display:grid;gap:8px"><h4>'+label+'</h4>'+
+ (kind==="dtf"?'<label>Fornecedor<select name="supplier" required><option value="">Selecione</option></select></label>':"")+
+ '<label>Número da ordem<input name="reference" required maxlength="120"></label><label>Data da ordem<input name="ordered" type="date" required></label><label>Data do pagamento ao fornecedor<input name="paid" type="date" required></label><label>Valor pago (USD)<input name="amount" type="number" min="0.01" step="0.01" required></label><button class="btn secondary" type="submit">Registrar compra paga</button></form>').join("")+
+ '</div><p id="octSupplyMessage" role="status"></p><div id="octSupplyList"></div><div id="octFeeBox"></div></section>'+
  '<div id="octPriorProofs" style="margin-top:16px"></div>';
  panel.querySelector("#octCloseWorkspace").onclick=close;
+ const production=panel.querySelector("#octProductionPurchases");
+ const supplyMessage=panel.querySelector("#octSupplyMessage");
+ const feeBox=panel.querySelector("#octFeeBox");
+ const localToday=new Intl.DateTimeFormat("en-CA",{timeZone:"America/New_York",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
+ let productionInitialized=false;
+ async function refreshProductionCosts(){
+  const [purchases,payments,fees]=await Promise.all([
+   client.from("oct_order_supply_purchases").select("supplier_name,supplier_order,ordered_on,paid_on,amount").eq("order_id",order.id).order("paid_on",{ascending:false}),
+   client.from("payments").select("provider").eq("order_id",order.id).eq("provider","paypal").eq("status","paid").limit(1),
+   client.from("oct_order_paypal_fees").select("amount,source").eq("order_id",order.id).maybeSingle()
+  ]);
+  panel.querySelector("#octSupplyList").innerHTML=purchases.error?'<p>Não foi possível carregar as compras.</p>':(purchases.data||[]).map(v=>
+   '<div style="padding:9px 0;border-top:1px solid #e3edf4"><strong>'+safe(v.supplier_name)+'</strong> · '+safe(v.supplier_order)+' · '+
+   safe(dollar.format(Number(v.amount)))+'<div>Ordem '+safe(v.ordered_on)+' · Pago '+safe(v.paid_on)+'</div></div>').join("")||'<p>Nenhuma compra paga registrada.</p>';
+  feeBox.innerHTML="";
+  if(payments.error||fees.error){feeBox.textContent="Não foi possível consultar as taxas." ;return}
+  if(!payments.data?.length)return;
+  const fee=fees.data;
+  feeBox.innerHTML='<h4>Taxa PayPal</h4>'+(fee?'<p>'+safe(dollar.format(Number(fee.amount)))+' · '+(fee.source==="paypal"?"Confirmada pelo PayPal":"Registro manual")+'</p>':'<p>Taxa pendente. Consulte o pagamento ou confira o valor no comprovante do PayPal.</p>')+
+   (fee?.source==="paypal"?"":'<form id="octManualFee"><label>Taxa real (USD) <input name="amount" type="number" min="0" step="0.01" required></label> <button type="submit" class="btn secondary">Salvar taxa</button></form>');
+  const form=feeBox.querySelector("form");if(!form)return;
+  if(fee)form.elements.amount.value=Number(fee.amount).toFixed(2);
+  form.onsubmit=async event=>{
+   event.preventDefault();const button=form.querySelector("button");button.disabled=true;
+   try{
+    const {data,error}=await client.rpc("oct_record_manual_paypal_fee",{p_order:order.id,p_amount:form.elements.amount.value});
+    if(error||data!==true)throw Error(error?.message||"Confira a taxa e o recebimento do PayPal.");
+    supplyMessage.textContent="Taxa registrada como saída no caixa.";await refreshProductionCosts();renderOctOverview();
+   }catch(error){supplyMessage.textContent=error.message}
+   finally{button.disabled=false}
+  };
+ }
+ async function openProductionPurchases(){
+  production.hidden=order.status!=="in_progress";
+  if(production.hidden)return;
+  if(productionInitialized){await refreshProductionCosts();return}
+  productionInitialized=true;
+  const select=production.querySelector('select[name="supplier"]');
+  const {data:vendors,error:vendorError}=await client.from("dtf_suppliers").select("id,name").eq("active",true).order("name");
+  if(vendorError)supplyMessage.textContent="Não foi possível carregar os fornecedores de DTF.";
+  else for(const vendor of vendors||[])select.add(new Option(vendor.name,vendor.id));
+  production.querySelectorAll("[data-supply-kind]").forEach(form=>{
+   form.elements.ordered.value=localToday;form.elements.paid.value=localToday;
+   form.elements.ordered.max=localToday;form.elements.paid.max=localToday;
+   form.onsubmit=async event=>{
+    event.preventDefault();const button=form.querySelector("button");button.disabled=true;
+    try{
+     const {data,error}=await client.rpc("oct_record_supply_purchase",{p_order:order.id,p_kind:form.dataset.supplyKind,
+      p_supplier:form.elements.supplier?.value||null,p_reference:form.elements.reference.value,
+      p_ordered:form.elements.ordered.value,p_paid:form.elements.paid.value,p_amount:form.elements.amount.value});
+     if(error||!data)throw Error(error?.message||"Não foi possível registrar a compra.");
+     supplyMessage.textContent="Compra registrada como saída no caixa.";
+     form.reset();form.elements.ordered.value=localToday;form.elements.paid.value=localToday;
+     await refreshProductionCosts();renderOctOverview();
+    }catch(error){supplyMessage.textContent=error.message}
+    finally{button.disabled=false}
+   };
+  });
+  await refreshProductionCosts();
+ }
+ openProductionPurchases();
+
  const payIssue=panel.querySelector("#octPayPalIssue");
  if(payIssue){
   const payResend=panel.querySelector("#octPayPalResend"),paySetup=panel.querySelector("#octPayPalSetup"),payStatus=panel.querySelector("#octPayPalStatus"),payInfo=panel.querySelector("#octPayPalInfo");
@@ -686,11 +753,11 @@ async function octOpenOrderWorkspace(orderId){
    try{
     const {data,error}=await client.rpc("oct_record_manual_payment",{p_order:order.id,p_method:method,p_amount:amount,p_reference:ref||null});
     if(error||!data)throw Error(error?.message||"Não foi possível salvar o pagamento.");
-    order.status="payment_confirmed";hasPaid=true;
-    panel.querySelector("#octWorkspaceStage").textContent="Pagamento confirmado · "+qty+" peças";
+    order.status="in_progress";hasPaid=true;
+    panel.querySelector("#octWorkspaceStage").textContent="Em produção · "+qty+" peças";
     manualForm.hidden=true;manualForm.reset();
-    manualInfo.textContent="Pagamento registrado. Pedido marcado como Pagamento confirmado.";
-    await loadPaymentHistory();renderOctOverview();
+    manualInfo.textContent="Pagamento registrado. Pedido movido para Em produção.";
+    await loadPaymentHistory();await openProductionPurchases();renderOctOverview();
    }catch(error){manualInfo.textContent=error.message}
    finally{manualBusy=false;setPaymentButtons()}
   };
@@ -715,7 +782,7 @@ async function octOpenOrderWorkspace(orderId){
      data?.delivery==="sent"?"PayPal aceitou o envio da fatura.":
      data?.status==="NOT_CREATED"?"Nenhuma fatura Live registrada no painel novo.":
      data?.status==="DRAFT"?"Fatura em rascunho no PayPal. Use Emitir e enviar para concluir.":"Status no PayPal: "+String(data?.status||"indisponível").replaceAll("_"," ")+".";
-    if(data?.paid){if(order.status==="awaiting_payment")order.status="payment_confirmed";hasPaid=true;await loadPaymentHistory();renderOctOverview();}
+    if(data?.paid){if(order.status==="awaiting_payment"){order.status="in_progress";panel.querySelector("#octWorkspaceStage").textContent="Em produção · "+qty+" peças";}hasPaid=true;await loadPaymentHistory();await openProductionPurchases();renderOctOverview();}
    }catch(error){
     if(action==="check_setup")ready=false;
     payInfo.textContent=error.message;
@@ -809,21 +876,20 @@ async function renderOctOverview(){
  if(!stageTarget)return;
  const [ordersResponse,ledgerResponse,quotesResponse]=await Promise.all([
  client.from("orders").select("id,legacy_id,order_number,status,total,created_at,legacy_payload,production_started_at,due_date").order("created_at",{ascending:false}).limit(500),
- client.from("legacy_records").select("payload").eq("source_table","ledger").limit(500),
+ client.from("oct_order_cash_summary").select("*").single(),
  client.from("quote_requests").select("id,request_number,customer_name,company,product,quantity,status,created_at,converted_estimate_id,file_paths").order("created_at",{ascending:false}).limit(80)
  ]);
  if(ordersResponse.error){stageTarget.textContent="Não foi possível carregar os pedidos: "+ordersResponse.error.message;return}
  const orders=ordersResponse.data||[];
  const pendingQuotes=(quotesResponse.data||[]).filter(q=>!q.converted_estimate_id&&q.status!=='converted');
 
- const ledger=(ledgerResponse.data||[]).map(x=>x.payload||{});
- const income=ledger.filter(x=>x.kind==="income").reduce((n,x)=>n+Number(x.amount||0)/100,0);
- const expense=ledger.filter(x=>x.kind==="expense").reduce((n,x)=>n+Number(x.amount||0)/100,0);
+ const cash=ledgerResponse.data||{};
+ const amount=value=>ledgerResponse.error?"Indisponível":dollar.format(Number(value||0));
  const metrics=[
  ["Estimates cadastrados",orders.length,"Até 500 registros recentes"],
  ["Em produção",orders.filter(o=>o.status==="in_progress").length,"Pedidos em andamento"],
- ["Recebimentos registrados",dollar.format(income),"Caixa, não valor de propostas"],
- ["Saldo registrado",dollar.format(income-expense),"Receitas menos despesas"]
+ ["Recebimentos registrados",amount(cash.income),"Pagamentos efetivamente registrados"],
+ ["Saldo registrado",amount(cash.balance),Number(cash.pending_fees)>0?"Saldo parcial · taxas PayPal pendentes":"Entradas menos saídas dos pedidos"]
  ];
  if(stats)stats.innerHTML=metrics.map(([label,value,sub])=>'<div class="stat"><span>'+safe(label)+'</span><strong>'+safe(value)+'</strong><small>'+safe(sub)+'</small></div>').join("");
  stageTarget.innerHTML=OCT_STAGES.map(([key,label])=>{
@@ -1270,18 +1336,32 @@ async function showCommercialRegistry(type){
 async function showFinanceBoard(){
  const target=document.querySelector("#content .placeholder");if(!target)return;
  target.classList.remove("placeholder");target.style.cssText="display:block;text-align:left";
- target.innerHTML='<h3>Financeiro</h3><p>Movimentações importadas do caixa original. Os pagamentos continuam protegidos de alterações manuais e devem ser reconciliados com PayPal.</p><div class="stats" id="financeSummary"></div><h3>Lançamentos históricos</h3><div id="financeLedger">Carregando...</div><p><button class="btn secondary" type="button" id="paypalTab">Consultar faturas e eventos PayPal</button></p>';
+ target.innerHTML='<h3>Caixa dos pedidos</h3><div class="stats" id="financeSummary"></div><p id="financePending" role="status"></p><div id="financeCurrent">Carregando...</div><details style="margin-top:18px"><summary>Lançamentos do sistema antigo</summary><div id="financeLedger">Carregando...</div></details><p><button class="btn secondary" type="button" id="paypalTab">Consultar faturas e eventos PayPal</button></p>';
  target.querySelector("#paypalTab").onclick=()=>showPage("paypalhistory");
- const {data,error}=await client.from("legacy_records").select("payload").eq("source_table","ledger").limit(500);
- if(error){target.querySelector("#financeLedger").textContent=error.message;return}
- const entries=(data||[]).map(x=>x.payload||{}).sort((a,b)=>String(b.date||"").localeCompare(String(a.date||"")));
- const inc=entries.filter(x=>x.kind==="income").reduce((n,x)=>n+Number(x.amount||0)/100,0);
- const expense=entries.filter(x=>x.kind==="expense").reduce((n,x)=>n+Number(x.amount||0)/100,0);
- target.querySelector("#financeSummary").innerHTML=[
- ["Recebimentos registrados",inc],["Despesas registradas",expense],["Saldo registrado",inc-expense]
- ].map(([label,value])=>'<div class="stat"><span>'+safe(label)+'</span><strong>'+dollar.format(value)+'</strong></div>').join("");
- target.querySelector("#financeLedger").innerHTML=entries.length?entries.map(v=>'<div class="module-item" style="margin:7px 0"><div><strong>'+safe(v.description||v.category||"Lançamento")+'</strong><p style="font-size:11px">'+safe(v.date||"")+' · '+safe(v.kind==="income"?"Recebimento":"Despesa")+'</p></div><strong>'+dollar.format(Number(v.amount||0)/100)+'</strong></div>').join(""):'<p>Sem lançamentos históricos.</p>';
+ const [cash,ledger,legacy]=await Promise.all([
+  client.from("oct_order_cash_summary").select("*").single(),
+  client.from("oct_order_cash_entries").select("*").order("movement_date",{ascending:false}).order("entry_id",{ascending:false}).limit(100),
+  client.from("legacy_records").select("payload").eq("source_table","ledger").limit(500)
+ ]);
+ if(cash.error)target.querySelector("#financeSummary").textContent="Não foi possível carregar o saldo.";
+ else{
+  const totals=cash.data;
+  target.querySelector("#financeSummary").innerHTML=[
+   ["Entradas",totals.income],["Saídas",totals.expense],[Number(totals.pending_fees)?"Saldo parcial":"Saldo dos pedidos",totals.balance]
+  ].map(([label,value])=>'<div class="stat"><span>'+safe(label)+'</span><strong>'+dollar.format(Number(value||0))+'</strong></div>').join("");
+  if(Number(totals.pending_fees))target.querySelector("#financePending").textContent="Há "+totals.pending_fees+" pagamento(s) com taxa PayPal pendente. O saldo ainda não desconta essas taxas.";
+ }
+ const labels={customer_payment:"Pagamento do cliente",paypal_fee:"Taxa PayPal",garments:"Compra de camisetas",dtf:"Compra de DTF"};
+ const methods={cash:"Dinheiro",zelle:"Zelle",paypal:"PayPal",manual:"Taxa registrada manualmente"};
+ target.querySelector("#financeCurrent").innerHTML=ledger.error?'<p>Não foi possível carregar os lançamentos.</p>':
+ (ledger.data||[]).map(v=>'<div class="module-item" style="margin:7px 0"><div><strong>'+safe(labels[v.category]||v.category)+'</strong><p style="font-size:12px">'+
+  safe([v.movement_date,v.order_number,methods[v.source]||v.source,v.reference].filter(Boolean).join(" · "))+'</p></div><strong>'+
+  (v.kind==="income"?"+":"−")+dollar.format(Number(v.amount))+'</strong></div>').join("")||'<p>Sem movimentações registradas.</p>';
+ const entries=(legacy.data||[]).map(x=>x.payload||{}).sort((a,b)=>String(b.date||"").localeCompare(String(a.date||"")));
+ target.querySelector("#financeLedger").innerHTML=legacy.error?'<p>Não foi possível carregar o histórico.</p>':
+ entries.map(v=>'<div class="module-item" style="margin:7px 0"><div><strong>'+safe(v.description||v.category||"Lançamento")+'</strong><p style="font-size:11px">'+safe(v.date||"")+' · '+safe(v.kind==="income"?"Recebimento":"Despesa")+'</p></div><strong>'+dollar.format(Number(v.amount||0)/100)+'</strong></div>').join("")||'<p>Sem lançamentos históricos.</p>';
 }
+
 const originalModuleTables={
  purchases:["purchases","purchase_events","purchase_payments"],
  studiohistory:["studio_versions","studio_proof_sets","artwork_proofs","artwork_files"],
