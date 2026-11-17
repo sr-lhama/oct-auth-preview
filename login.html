@@ -92,14 +92,19 @@
         required
       >
       <button id="submitBtn" type="submit">
-        Send Secure Sign-In Link
+        Send Sign-In Code or Link
       </button>
     </form>
 
+    <form id="otpForm" hidden style="margin-top:16px">
+      <label for="otp">Enter the 6-digit code from your email</label>
+      <input id="otp" type="text" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" placeholder="000000" required style="text-align:center;letter-spacing:6px;font-size:24px">
+      <button id="verifyBtn" type="submit">Verify &amp; Sign In</button>
+    </form>
     <p id="message" role="status" aria-live="polite"></p>
     <a id="nextLink" href="dashboard.html" style="display:none;margin-top:14px;padding:14px;background:#e83383;color:white;text-decoration:none;border-radius:8px;font-size:14px;font-weight:bold">Continue</a>
 
-    <a class="back" href="https://sr-lhama.github.io/oct/">
+    <a class="back" href="https://orlandocustomtees.com/">
       Back to Orlando Custom Tees
     </a>
   </main>
@@ -112,6 +117,9 @@
     const message = document.getElementById("message");
     const form = document.getElementById("loginForm");
     const button = document.getElementById("submitBtn");
+    const otpForm = document.getElementById("otpForm");
+    const verifyBtn = document.getElementById("verifyBtn");
+    let requestedEmail = "";
 
     if (
       SUPABASE_URL.startsWith("YOUR_") ||
@@ -119,6 +127,7 @@
     ) {
       message.textContent = "Authentication setup pending.";
       form.hidden = true;
+    otpForm.hidden = true;
     } else {
       const client = window.supabase.createClient(
         SUPABASE_URL,
@@ -129,6 +138,8 @@
     
 async function initialize() {
   try {
+    const { data: sessionData } = await client.auth.getSession();
+    if (!sessionData.session) return;
     const { data, error } = await client.auth.getUser();
 
     if (error) {
@@ -148,6 +159,7 @@ if (data.user) {
     message.textContent =
       "Signed in, but unable to verify account permissions.";
     form.hidden = true;
+    otpForm.hidden = true;
     return;
   }
 
@@ -162,6 +174,7 @@ if (data.user) {
   }
 
   form.hidden = true;
+    otpForm.hidden = true;
   const nextLink = document.getElementById("nextLink");
   nextLink.href = canManageOrders ? "dashboard.html" : "portal.html";
   nextLink.textContent = canManageOrders ? "Open Dashboard" : "Track My Orders";
@@ -178,9 +191,11 @@ if (data.user) {
       form.addEventListener("submit", async (event) => {
         event.preventDefault();
         button.disabled = true;
-        message.textContent = "Sending your secure link...";
+        message.textContent = "Sending your secure sign-in email...";
 
-        const email = document.getElementById("email").value;
+        const email = document.getElementById("email").value.trim();
+        otpForm.hidden = true;
+        requestedEmail = "";
 
         try {
           const { error } = await client.auth.signInWithOtp({
@@ -196,15 +211,39 @@ if (data.user) {
           if (error) throw error;
 
           message.textContent =
-            "If your account is registered, check your inbox.";
+            "Check your inbox. Enter the code below, or use the sign-in link in your email.";
+          requestedEmail = email;
+          otpForm.reset();
+          otpForm.hidden = false;
+          document.getElementById("otp").focus();
         } catch (error) {
           message.textContent =
-            "Unable to send the link. Please try again.";
+            "Unable to send the sign-in email. Please try again.";
         } finally {
           button.disabled = false;
         }
       });
 
+      otpForm.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        if (!requestedEmail) return;
+        const token = document.getElementById("otp").value.trim();
+        if (!/^\d{6}$/.test(token)) return;
+        verifyBtn.disabled = true;
+        button.disabled = true;
+        message.textContent = "Verifying your code...";
+        try {
+          const { error } = await client.auth.verifyOtp({ email: requestedEmail, token, type: "email" });
+          if (error) throw error;
+          otpForm.hidden = true;
+          await initialize();
+        } catch (error) {
+          message.textContent = "Invalid or expired code. Try again or request a new email.";
+        } finally {
+          verifyBtn.disabled = false;
+          button.disabled = false;
+        }
+      });
       initialize();
     }
   </script>
