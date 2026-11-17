@@ -27,7 +27,7 @@ jobs:
           import ftplib, ssl, os, pathlib, subprocess
           root = pathlib.Path.cwd()
           tracked = subprocess.check_output(['git','ls-files','-z']).decode().split('\0')
-          allowed = {"dashboard.html","login.html","portal.html","admin-icon.svg","manifest.webmanifest","index.html","robots.txt"}
+          allowed = {"dashboard.html","login.html","portal.html","admin-icon.svg","manifest.webmanifest","index.html","robots.txt","icq.mp3"}
           extensions = {'.html','.css','.js','.json','.svg','.ico','.png','.jpg','.jpeg','.webp','.avif','.gif','.woff','.woff2','.ttf','.mp4','.webm','.mp3','.wav','.webmanifest','.xml','.txt'}
           files = []
           for name in tracked:
