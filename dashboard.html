@@ -136,7 +136,7 @@ body.dark-mode #octSoundSettings{background:#202b3a;color:#f0f4ff;border-color:#
 </header>
 <section id="octSoundSettings" hidden role="region" aria-label="Alertas do dashboard">
 <h3>Alertas do dashboard</h3>
-<p>Novo pedido: caixa registradora.<br>Mudança de status: ICQ.</p>
+<p>Novo orçamento (quote): ICQ.<br>Novo pedido: caixa registradora.<br>Mudanças de status: silenciosas.</p>
 <label for="octSoundVolume" style="display:block;font-size:12px;font-weight:650;margin-top:16px">Volume: <output id="octVolumeLabel">70%</output></label>
 <input type="range" min="0" max="100" step="5" value="70" id="octSoundVolume" style="width:100%;margin:12px 0 15px" aria-label="Volume dos alertas">
 <div style="display:flex;gap:8px;flex-wrap:wrap"><button type="button" class="btn secondary" id="octTestCash">Testar caixa</button><button type="button" class="btn secondary" id="octTestIcq">Testar ICQ</button></div>
@@ -241,7 +241,7 @@ async function octClockAction(action){
  if(location.hash==="#hours")showPage("hours");
 }
 
-/* Notification sounds are generated in the browser. No proprietary audio or remote file is required. */
+/* Cash chime is synthesized; ICQ quote sound uses the supplied compressed recording. */
 let octSoundContext=null,octSoundEnabled=false,octSoundVolume=70,octSoundTimer=null;
 let octAlertBaseline=null,octSoundStarted=false,octSoundChecking=false;
 const octSafeStorage={
@@ -279,11 +279,13 @@ async function octPlaySound(kind,force=false){
   octTone(ctx,{freq:1480,delay:.065,length:.13,wave:"triangle",gain:.14});
   octTone(ctx,{freq:1960,delay:.16,length:.27,wave:"sine",gain:.18});
   octTone(ctx,{freq:2960,delay:.16,length:.21,wave:"sine",gain:.075});
- }else{
-  /* Short classic instant-message-style notification, not a sampled ICQ recording. */
-  octTone(ctx,{freq:740,length:.11,wave:"sine",gain:.16});
-  octTone(ctx,{freq:1120,delay:.14,length:.13,wave:"triangle",gain:.16});
-  octTone(ctx,{freq:920,delay:.29,length:.16,wave:"sine",gain:.15});
+ }else if(kind==="icq"){
+  if(octSoundVolume===0)return;
+  const raw=Uint8Array.from(atob("SUQzBAAAAAAAIlRTU0UAAAAOAAADTGF2ZjYxLjcuMTAzAAAAAAAAAAAAAAD/83DAAAAAAAAAAAAASW5mbwAAAA8AAAA2AAARPgAPExMYGBwcISElJSouLjMzODg8PEFBRUVKTk5TU1dXXFxgYGVlam5uc3N3d3x8gICFiYmOjpKSl5ecnKCgpamprq6ysre3u7vAwMTJyc7O0tLX19vb4ODk6ent7fLy9vb7+/8AAAAATGF2YzYxLjE5AAAAAAAAAAAAAAAAJAJAAAAAAAAAET53kS6MAAAAAAAAAAAAAAAAAP/zMMQAAAADSAAAAABMQU1FVVVVTEFNRTMuMTAwVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVf/zMsRBAAADSAAAAABVVVVVVVVVTEFNRTMuMTAwVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVX/8zDEgwAAA0gAAAAAVVVVVVVVTEFNRTMuMTAwVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVX/8zLEvQAAA0gAAAAAVVVVVVVVVUxBTUUzLjEwMFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV//MwxL4AAANIAAAAAFVVVVVVVUxBTUUzLjEwMFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV//MwxL4AAANIAAAAAFVVVVVVVUxBTUUzLjEwMFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV//MyxL0AAANIAAAAAFVVVVVVVVVMQU1FMy4xMDBVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVf/zMMS+AAADSAAAAABVVVVVVVVMQU1FMy4xMDBVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVf/zMMS+AAADSAAAAABVVVVVVVVVTEFNRTMuMTAwVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVf/zMsS9AAADSAAAAABVVVVVVVVVyp+OBVI5MbbSmw6Hb1OO2lZgXz4sGaE6/e6EtRlg7g71kKMwK65QvZei90zHgcRuLyIP4iDmdKDtcbH/8zDEvgAAA0gAAAAAYM0i360pSQYLAAGSDJ3FwRGY8GI7hOPQwEcqMtVejcX0+jeOMOn7Dr9llTwvnRoT0i1+kZwhnxofuXcWbfHLttL/8zLEvQAAA0gAAAAAJQ86TxwOR/MHABUMB0RCru4GAAAhE3eOBu4dzCAANwbg3F3eXdEIFDJFz7+Zd7gUFxd3d7IFAbi7voicu/7i4NwW//MwxL4AAANIAAAAAAeCiIiIKC4uL3CIgoH4u9+iJfCCgoKJ8uLu7i4uYn+goDQG4NxcXPfSoIFDEY/wY/gBPY/7mDfl0ewcz/BYDjSL//MwxP8hkmUgAGGZgZ/5NHmMs0T//zdRoSi0zf//9Ct0C4s3Lf///80TJcyJQoJoGizc3QVu3/4T+y0iukkm60EKjEXIu6jxfNzQHpOm//MyxLkZQlG04UNAASYM6suGhozE0LWXX/32757///1dqzf/+r6/3uswNHSaY+oMgRzbsBvmmrnHTdRAT/SaSsydBBjz/T6nERMWBWaPXP/zMMSWDqJacAGCaADXqyMnOPF53/9WNJSA9//9B8K48F/0DP+G6oB81YGZW/AE7JaliYAQ9uZORbMenHRSRarsjX9UONIsSXnf8RREJP/zMMScDio+2AGKgAA6aaT8iHf7SoS+kMiV34FESg6EK8qWM882kNZZPL9/zO1KI03IAHSBfqjlFFP97fq67LrGcUdZ9F5gg6TIgJssTv/zMsSkDtHO+l3HUAIfE0JIIDy4E2WAMBomj5MM5P4nC5UmFeRN9Pk/1JqsKN9bWlVIBAS7LsKuUrGFAXQXBLItepLNClkrYSsaUAA3O3f/8zDEqg4BOvJcEA4GanOx22YWvKc2Ttd+w1/aM+Rm1Ml+MS9XN3gUgYAyNKo19s3Q6pW1NCphknUP+gTyCiyelj/XoLFgC7xcBqmIVIr/8zDEsxm6EolIwkcpmmonFIkmHogdanpiyCcTJxMTqOAG2Gg7F8i5BzA8FmQ5wjogZfb9BtdYsgplQumZuX/73uqhdzBziZoXiZMj/ff/8zLEjQ7ZAqZfRhgARb1qTQZDbZZQKhcNzQvlxjqTF4nP//KV//qFhIM/9Q/gpgng4FJXX1UUhkEoeTb/SJ5cQFPiT8k/5cIvNcqJAGBz//MwxJMaGl6oAY2IAHwWAd/KARVQCGIQ9eWNwAN/7HOKhv/p6BERjaqcnoGP/5RJXo8yUI5dIlhgIH/+hhQ34NH/zrvrATv2fEpj2JwR//MyxGsMEPbgAcdoAGUacBv19VQ4AsH7ZOPivwenJMoxK9f+4EYuVcO3lyR5a9CCv/5Aon8MHvwud/ArvsPfC1WDQpgRaetgC36Lri4KE//zMMR8DXk/Hv46RQq0d/7gSnTDzEV/VBm9wZJVt1oMBHp9pcYAoeOw0jt6XD5v/0Cm/Lf0fx6AdmsSXeyAADbI9RWC1oq6fIxDPe55jf/zMMSHDck++lxqxNLqRAsDtf+aIMD4006X6iAHx+rHL+VO//MHg2Zn/8jG17+gnVQAMA+7R7f/y4G9et617JhLRRzV483yRBZuHKwTgP/zMsSQDfmy8lxQy0KU83/oqiDHrav/kZ3/5UbEz//VDv/yAFvwykNQMC19ugN91O3woX81f0AEGd9SSfvNMNdwAi//OONHRBz1z18fEpb/8zDEmg5p7v5eEBQG65rWZoHjyyl/8Tt//EzfqoMdJ91nAL0oGQsd2O06AFiR+/9Rznn0srOpUC1G9O6qVCwZne1MYolvc43hVIlMT3//8zDEoQ3qGso4kFUIjF3//IRJ+TogQCC7c3oDf+2LIXvQ9qisBrkHGFf2BaFp7LuZ1MB4nnLOvsjlhkx9SjO/5C//3iBZOq/SNTv/pJT/8zLEqg3yHu48OA8C39FjUBEOf+y4AFv5rItRuMenthGBQ/b/qIrtgQ6Niei1WxVbO5furIqLAq05UHPwaf9T7vEXUpxFKkBQYRLrtbQA//MwxLQOIhrlnAgUBt/lcTqHQL2MnWoCgXsj/tzjlQRf2t7IODcVau1QKG3phUJezldXqTYRm2EKR2pUAqBKTaGAqxSaqAgICSniJ4UB//MyxLwOuiLaPGhVAtxEJTqCywVgqsGgarDZZCgqeBURPPEegRLCT6gayz/5U6IlP5YO1QJBUEoBB4eBRUBCzSN4q07beFcjJP6RZN8KGv/zMMTDDdku6l44TUI8zV2JOvCSJIKGgKkFhUBIIhOAo8CkYFFHqetMQU1FVVURO2VpwAf/la7lEgKRckJIeKAVlaGWOSLIHlWf2fx5J//zMMTMDOEq3l4oRw7Kihpn4opMQU1FMy4xMDCqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqv/zMsTZDshKgFJIxiSqqqqqqqqqTEFNRTMuMTAwqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqr/8zDE3w2AFhxAMMYAqqqqqqqqTEFNRTMuMTAwqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqr/8zDE5AlYBcB+AEQAqqqqqqqqTEFNRTMuMTAwqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqr/8zLEvQAAAAAAAAAAqqqqqqqqqkxBTUUzLjEwMKqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq//MwxL4AAANIAAAAAKqqqqqqqkxBTUUzLjEwMKqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq//MwxL4AAANIAAAAAKqqqqqqqqpMQU1FMy4xMDCqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq//MyxL0AAANIAAAAAKqqqqqqqqpMQU1FMy4xMDCqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqv/zMMS+AAADSAAAAACqqqqqqqpMQU1FMy4xMDCqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqv/zMsS9AAADSAAAAACqqqqqqqqqTEFNRTMuMTAwqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqr/8zDEvgAAA0gAAAAAqqqqqqqqTEFNRTMuMTAwqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqr/8zDEvgAAA0gAAAAAqqqqqqqqTEFNRTMuMTAwqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqr/8zLEvQAAA0gAAAAAqqqqqqqqqkxBTUUzLjEwMKqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq//MwxL4AAANIAAAAAKqqqqqqqkxBTUUzLjEwMKqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq//MwxL4AAANIAAAAAKqqqqqqAgVa2rgLAYkmXmoVJhwMCtJ05ML00xOoLomXm0C8oyc3D1jaislUQ8GCNaMoI5G0CZ8UHWjxsnFCb0C7//MyxL0AAANIAAAAAEw3c0mSco4jWNHg2ICE2SJvbhdYucQmw2IEJsUF0Rk2bc8wKyA6iMCguiJCNJlZxhGkwu0ST+/wuTC+zyCBAAAAgf/zMMS+AAADSAAAAAACCF/ueDhdGBe3phCMPIEAAEECARlkM937u3Ptoe7uDyae2xAhviDAAACCDY93dsQJnkybEMu3B1vdk9gmTJk9iP/zMMS/AEAEAAAQAADxdk7PJp3+eTAYXfe4IECBDL2Ce+7vWjf+xmD1hxgboNqFdkUA00XStboFy+TvOEAD1RnAIBRnreUWAb08TFCqM//zMsT/HbplgPQAUgnujNyCwqWQv//iS1gme//AR6LJ///aqYkSJU4KAQCSAoK8FQVBU7iIGlA0DX4iBrlgaeJSoa4KhoqCp4SuxEDX/xL/8zDEyhiiXeABRjABgqd9YKnlTEFNRTMuMTAwVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVX/8zLEqA4BfmgBjygAVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV//MwxLINIE38AcYAAFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV"),c=>c.charCodeAt(0));
+  const buffer=await ctx.decodeAudioData(raw.buffer);
+  const source=ctx.createBufferSource(),gain=ctx.createGain();
+  source.buffer=buffer;gain.gain.value=octSoundVolume/100;
+  source.connect(gain);gain.connect(ctx.destination);source.start();
  }
 }
 function octSoundUi(){
@@ -316,14 +318,15 @@ async function octCheckAlerts(){
   const freshQuote=[...snap.inbox].some(id=>!octAlertBaseline.inbox.has(id));
   const statusChanged=[...snap.history].some(id=>!octAlertBaseline.history.has(id));
   octAlertBaseline=snap;
-  if(freshOrder||freshQuote){
+  if(freshQuote){
+   await octPlaySound("icq").catch(()=>{});
+   const msg=document.getElementById("octSoundLastAlert");
+   if(msg)msg.textContent="Último alerta: novo orçamento · "+new Date().toLocaleTimeString("pt-BR");
+  }
+  if(freshOrder){
    await octPlaySound("cash").catch(()=>{});
    const msg=document.getElementById("octSoundLastAlert");
    if(msg)msg.textContent="Último alerta: novo pedido · "+new Date().toLocaleTimeString("pt-BR");
-  }else if(statusChanged){
-   await octPlaySound("icq").catch(()=>{});
-   const msg=document.getElementById("octSoundLastAlert");
-   if(msg)msg.textContent="Último alerta: alteração de status · "+new Date().toLocaleTimeString("pt-BR");
   }
   if((freshOrder||freshQuote||statusChanged)&&location.hash==="#overview")renderOctOverview();
  }catch(e){console.warn("OCT sound notifications unavailable",e)}
@@ -341,7 +344,7 @@ function octInitializeSound(){
   const next=!octSoundEnabled;
   if(next){try{await octUnlockAudio()}catch(e){window.alert(e.message);return}}
   octSoundEnabled=next;octSafeStorage.set("oct_sound_enabled",String(next));octSoundUi();
-  if(next)await octPlaySound("icq",true).catch(()=>{});
+
  });
  const settings=document.getElementById("octSoundSettings"),gear=document.getElementById("octSoundSettingsToggle");
  gear?.addEventListener("click",()=>{
