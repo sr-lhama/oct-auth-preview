@@ -91,6 +91,68 @@ body.dark-mode .nav-btn{color:#b2bed0}body.dark-mode .oct-stage{background:#2a36
 body.dark-mode #octSoundSettings{background:#202b3a;color:#f0f4ff;border-color:#41506a}
 @media(max-width:720px){#octSoundSettings{right:12px;top:120px}}
 
+
+/* OCT mobile workspace: scoped to narrow viewports only */
+.oct-mobile-backdrop,.oct-mobile-tools-toggle{display:none}
+@media(max-width:760px){
+ html,body{max-width:100%;margin:0}
+ #app:not([hidden]){display:block!important;width:100%;min-width:0}
+ #app .main{width:100%;min-width:0;max-width:100%}
+ #app .mobile-nav{display:none!important}
+ #app .sidebar{display:none!important;position:fixed;inset:0 auto 0 0;width:min(310px,86vw);min-width:0;max-width:86vw;height:100dvh;overflow-y:auto;overscroll-behavior:contain;z-index:102;padding:calc(18px + env(safe-area-inset-top,0px)) 14px calc(20px + env(safe-area-inset-bottom,0px));box-shadow:10px 0 40px #091a3530}
+ #app.oct-drawer-open .sidebar{display:flex!important}
+ body.oct-manager #app .sidebar{display:none!important}
+ #app.oct-drawer-open .oct-mobile-backdrop{display:block;position:fixed;inset:0;z-index:101;background:#091a3580;border:0;width:100%;height:100%;padding:0}
+ #app .sidebar .nav-btn{min-height:45px;font-size:14px}
+ #app .sidebar .brand img{width:160px!important}
+ .topbar{display:grid;grid-template-columns:44px minmax(0,1fr) 44px;align-items:center;gap:9px;padding:10px 14px;min-height:0;position:sticky;top:0;z-index:20}
+ .topbar #hideMenu{grid-column:1;grid-row:1;width:44px;min-height:44px;padding:0;font-size:20px}
+ .topbar .user-info{grid-column:2;grid-row:1;min-width:0;text-align:left}
+ .topbar .user-info strong{max-width:100%;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+ .topbar .user-info span{display:block;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+ .topbar .oct-mobile-tools-toggle{display:block;grid-column:3;grid-row:1;width:44px;min-height:44px;padding:0;font-size:20px}
+ .topbar .header-clock{display:flex;grid-column:1/3;grid-row:2;gap:5px 9px;min-width:0}
+ .header-clock strong{font-size:19px;letter-spacing:.4px}
+ .header-clock span{font-size:10px}
+ .topbar .topbar-actions{display:contents}
+ .topbar-actions #startShift{grid-column:3;grid-row:2;min-width:0;width:44px;height:44px;font-size:0;padding:0}
+ .topbar-actions #startShift::after{content:"↻";font-size:20px}
+ .topbar-actions #startShift[disabled]{opacity:.5}
+ .topbar-actions > :not(#startShift){display:none}
+ .topbar.oct-tools-open .topbar-actions > :not(#startShift){display:flex;align-items:center;justify-content:center;grid-column:auto;min-height:44px;text-align:center;font-size:12px;padding:8px}
+ .topbar.oct-tools-open .topbar-actions > a,.topbar.oct-tools-open #octSoundsToggle{grid-column:1/-1;border:1px solid var(--line);border-radius:9px}
+ .topbar.oct-tools-open #octSoundSettingsToggle,.topbar.oct-tools-open #darkModeToggle,.topbar.oct-tools-open #logoutBtn{grid-column:auto}
+ body.oct-manager .topbar .user-info{grid-column:1/3}
+ .content{width:100%;max-width:100%;min-width:0;padding:18px 14px calc(28px + env(safe-area-inset-bottom,0px));overflow-wrap:anywhere}
+ .oct-head{gap:10px;margin-bottom:16px}
+ .oct-head small{font-size:9px;letter-spacing:1.4px}
+ .oct-head h2{font-size:22px;line-height:1.2;margin-top:8px}
+ .oct-head .btn{min-height:40px;padding:9px 12px}
+ .stats{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-bottom:20px}
+ .stat{min-width:0;min-height:105px;padding:13px 12px;border-radius:12px}
+ .stat span,.stat small{font-size:11px;line-height:1.35}
+ .stat strong{font-size:clamp(18px,6vw,25px);margin:9px 0}
+ .kanban-header{gap:10px;margin-bottom:12px}
+ .kanban-header h3{font-size:18px}
+ .kanban-header>div{display:flex;gap:6px;flex-wrap:wrap;width:100%}
+ .kanban-header .btn{flex:1;min-height:44px;padding:8px;font-size:11px}
+ .oct-pipeline{grid-template-columns:minmax(0,1fr);gap:8px}
+ .oct-stage{height:auto;min-height:0;padding:9px 10px}
+ .oct-stage-title,.oct-stage-title b{font-size:12px;min-height:28px}
+ .oct-stage-orders{max-height:270px;overflow:auto}
+ .oct-empty{margin:6px 0;font-size:11px}
+ .oct-pipeline .oct-order{min-height:44px;font-size:12px}
+ .oct-pipeline-search input,.content input:not([type=checkbox]):not([type=radio]):not([type=range]),.content select,.content textarea{max-width:100%;font-size:16px!important;min-width:0}
+ .content img,.content canvas,.content video{max-width:100%;height:auto}
+ .content .panel,.content .hero{min-width:0;padding:14px}
+ .content .hero{flex-wrap:wrap}
+ .content [style*="grid-template-columns:repeat(auto-fit"]{grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr))!important}
+ .content .oct-order-header{position:static}
+ .content table{min-width:520px}
+ .content [style*="overflow:auto"],.content [style*="overflow-x:auto"]{max-width:100%;overscroll-behavior-x:contain}
+ #octSoundSettings{top:calc(62px + env(safe-area-inset-top,0px));right:10px;max-height:75dvh;overflow:auto;z-index:100}
+ dialog{max-width:calc(100vw - 24px);max-height:85dvh;overflow:auto}
+}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
@@ -115,12 +177,14 @@ body.dark-mode #octSoundSettings{background:#202b3a;color:#f0f4ff;border-color:#
 <nav id="desktopNav" class="nav" aria-label="Administrative navigation"></nav>
 <div class="sidebar-foot">Orlando, Florida<br>Protected admin preview<br><a href="https://sr-lhama.github.io/oct/" target="_blank" rel="noopener noreferrer">Visit main website ↗</a></div>
 </aside>
+<button type="button" class="oct-mobile-backdrop" aria-label="Fechar menu"></button>
 <div class="main">
 <div class="mobile-nav" id="mobileNav" aria-label="Mobile administrative navigation"></div>
 <header class="topbar">
 <h1 id="pageTitle" style="display:none">Visão geral</h1>
 <button type="button" class="btn secondary" id="hideMenu" title="Recolher menu" aria-label="Recolher menu">☰</button>
 <div class="user-info"><strong id="displayName"></strong><span id="displayEmail">Administrador · Orlando</span></div>
+<button type="button" class="btn secondary oct-mobile-tools-toggle" aria-label="Mais ações" aria-expanded="false">⋯</button>
 <div class="header-clock"><div><span>Jornada encerrada</span><strong>00:00:00</strong></div><span class="journey-label">Sem jornada</span></div>
 <div class="topbar-actions">
 <button type="button" class="btn" id="startShift">Iniciar jornada</button>
@@ -1136,6 +1200,10 @@ function nav(){
  if(create)create.onclick=()=>{showPage("estimates");setTimeout(()=>document.querySelector("#newEntry")?.click(),400)};
 }
 function showPage(id){
+ app.classList.remove("oct-drawer-open");
+ document.getElementById("hideMenu")?.setAttribute("aria-expanded","false");
+ document.querySelector(".topbar")?.classList.remove("oct-tools-open");
+ document.querySelector(".oct-mobile-tools-toggle")?.setAttribute("aria-expanded","false");
  if(profile?.role==="manager"||!pages.some(p=>p.id===id))id="overview";
  document.querySelectorAll("[data-page]").forEach(b=>b.setAttribute("aria-current",b.dataset.page===id?"page":"false"));
  document.getElementById("pageTitle").textContent=pages.find(p=>p.id===id).label;
@@ -1726,8 +1794,13 @@ async function start(){
  octInitializeSound();
  document.getElementById("hideMenu")?.addEventListener("click",()=>{
  const sidebar=document.querySelector(".sidebar");if(!sidebar)return;
+ if(matchMedia("(max-width:760px)").matches){
+  const open=app.classList.toggle("oct-drawer-open");document.getElementById("hideMenu").setAttribute("aria-expanded",String(open));return;
+ }
  const hidden=sidebar.style.display==="none";sidebar.style.display=hidden?"flex":"none";
  });
+ document.querySelector(".oct-mobile-backdrop")?.addEventListener("click",()=>{app.classList.remove("oct-drawer-open");document.getElementById("hideMenu")?.setAttribute("aria-expanded","false")});
+ document.querySelector(".oct-mobile-tools-toggle")?.addEventListener("click",e=>{const open=document.querySelector(".topbar").classList.toggle("oct-tools-open");e.currentTarget.setAttribute("aria-expanded",String(open));});
  document.getElementById("darkModeToggle")?.addEventListener("click",()=>document.body.classList.toggle("dark-mode"));
  document.getElementById("startShift")?.addEventListener("click",()=>octClockAction(octActiveShift?(octActiveShift.break_started_at?"resume":"pause"):"in"));
  fetchOctClock();
