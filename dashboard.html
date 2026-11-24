@@ -1566,7 +1566,7 @@ async function inspectOctBackup(file,onProgress){
 async function showMessagesAdmin(){
  const slot=document.querySelector("#content .placeholder");if(!slot)return;
  slot.classList.remove("placeholder");slot.style.cssText="display:block;text-align:left";
- slot.innerHTML='<h3>Mensagens dos clientes</h3><p>Histórico do portal vinculado à solicitação. E-mails externos ainda não são sincronizados.</p><div id="octMessageRequestList">Carregando solicitações...</div><div id="octAdminConversation" style="margin-top:18px"></div>';
+ slot.innerHTML='<h3>Mensagens dos clientes</h3><p>Selecione uma solicitação para conversar com o cliente pelo portal.</p><div id="octMessageRequestList">Carregando solicitações...</div><div id="octAdminConversation" style="margin-top:18px"></div>';
  const list=slot.querySelector("#octMessageRequestList");
  const {data:quotes,error}=await client.from("quote_requests").select("id,request_number,customer_name,email,product,status").order("created_at",{ascending:false}).limit(200);
  if(error){list.textContent="Erro ao carregar: "+error.message;return}
@@ -1575,24 +1575,57 @@ async function showMessagesAdmin(){
   '<button type="button" class="btn secondary octConversationButton" data-i="'+i+'">'+safe(q.request_number)+' · '+safe(q.customer_name)+'</button>'
  ).join("")+'</div>';
  list.querySelectorAll(".octConversationButton").forEach(button=>button.onclick=()=>conversation(quotes[Number(button.dataset.i)]));
+ let chatTimer;
  async function conversation(q){
-  const area=slot.querySelector("#octAdminConversation");
-  area.innerHTML='<div class="panel"><h3>'+safe(q.customer_name)+' · '+safe(q.request_number)+'</h3><p>'+safe(q.email)+' · '+safe(q.product)+' · '+safe(q.status)+'</p><div id="octAdminMessages">Carregando...</div><form id="octAdminMessageForm"><label for="octAdminMessageInput">Responder pelo portal</label><textarea id="octAdminMessageInput" rows="4" maxlength="4000" required style="width:100%;margin:9px 0;padding:12px;border:1px solid #dbe5ed;border-radius:10px"></textarea><button class="btn" type="submit">Enviar mensagem</button></form></div>';
-  const {data,error}=await client.from("customer_messages").select("id,sender_role,body,created_at").eq("quote_request_id",q.id).order("created_at",{ascending:true}).limit(200);
-  const target=area.querySelector("#octAdminMessages");
-  if(error){target.textContent=error.message;return}
-  target.innerHTML=data?.length?data.map(m=>
-    '<div style="border-left:3px solid '+(m.sender_role==="staff"?"#e32183":"#06a8de")+';padding:10px 13px;background:#f5f8fd;margin:9px 0;border-radius:8px"><small>'+safe(m.sender_role==="staff"?"Equipe OCT":"Cliente")+' · '+safe(new Date(m.created_at).toLocaleString("pt-BR"))+'</small><p style="margin:5px 0;white-space:pre-wrap">'+safe(m.body)+'</p></div>'
-  ).join(""):'<p>Não há mensagens nesta solicitação.</p>';
-  area.querySelector("form").onsubmit=async e=>{
+  clearInterval(chatTimer);
+  const area=slot.querySelector("#octAdminConversation"),userId=currentUser.id;
+  area.innerHTML='<div class="panel"><h3>'+safe(q.customer_name)+' · '+safe(q.request_number)+'</h3><p>'+safe(q.email)+' · '+safe(q.product)+' · '+safe(q.status)+'</p><div id="octAdminMessages" role="log" tabindex="0" style="max-height:24rem;overflow:auto;overflow-wrap:anywhere"></div><p id="octAdminMessageStatus" role="status"></p><form><label for="octAdminMessageInput">Responder pelo portal</label><textarea id="octAdminMessageInput" rows="4" maxlength="4000" required style="width:100%;margin:9px 0;padding:12px;border:1px solid #dbe5ed;border-radius:10px"></textarea><button class="btn" type="submit">Enviar mensagem</button></form></div>';
+  const history=area.querySelector("#octAdminMessages"),status=area.querySelector("#octAdminMessageStatus");
+  const form=area.querySelector("form"),input=area.querySelector("textarea"),button=form.querySelector("button");
+  const active=()=>history.isConnected&&currentUser?.id===userId;
+  let loading=false,rendered;
+  async function load(){
+   if(loading||!active())return;
+   loading=true;
+   try{
+    const {data,error}=await client.from("customer_messages").select("id,sender_role,body,created_at").eq("quote_request_id",q.id).order("created_at",{ascending:false}).order("id",{ascending:false}).limit(200);
+    if(!active())return;
+    if(error)throw error;
+    const rows=(data||[]).reverse();
+    const keys=rows.map(m=>m.id).join(",");
+    if(keys!==rendered){
+     const follow=rendered===undefined||history.scrollHeight-history.scrollTop-history.clientHeight<48;
+     history.innerHTML=rows.length?rows.map(m=>
+      '<div style="border-inline-start:3px solid '+(m.sender_role==="staff"?"#e32183":"#06a8de")+';padding:10px 13px;margin:9px 0"><small>'+safe(m.sender_role==="staff"?"Equipe OCT":"Cliente")+' · '+safe(new Date(m.created_at).toLocaleString("pt-BR"))+'</small><p style="margin:5px 0;white-space:pre-wrap">'+safe(m.body)+'</p></div>'
+     ).join(""):'<p>Não há mensagens nesta solicitação.</p>';
+     if(follow)history.scrollTop=history.scrollHeight;
+     rendered=keys;
+    }
+   }catch(error){
+    if(active()&&rendered===undefined)history.textContent="Não foi possível carregar as mensagens. Tentando novamente…";
+   }finally{loading=false}
+  }
+  form.onsubmit=async e=>{
    e.preventDefault();
-   const body=area.querySelector("#octAdminMessageInput").value.trim();if(!body)return;
-   const submit=e.target.querySelector('button[type="submit"]');submit.disabled=true;
-   const {error:sendError}=await client.from("customer_messages").insert({quote_request_id:q.id,sender_user_id:currentUser.id,sender_role:"staff",body});
-   submit.disabled=false;
-   if(sendError){window.alert("Não foi possível enviar: "+sendError.message);return}
-   conversation(q);
+   const body=input.value.trim();
+   if(!body||button.disabled||!active())return;
+   button.disabled=true;
+   status.textContent="";
+   try{
+    const {error}=await client.from("customer_messages").insert({quote_request_id:q.id,sender_user_id:userId,sender_role:"staff",body});
+    if(error)throw error;
+    if(input.value.trim()===body)input.value="";
+    if(active())await load();
+   }catch(error){
+    if(active())status.textContent="Não foi possível enviar. Tente novamente.";
+   }finally{button.disabled=false}
   };
+  void load();
+  const timer=setInterval(()=>{
+   if(!active()){clearInterval(timer);return}
+   if(!document.hidden)void load();
+  },4000);
+  chatTimer=timer;
  }
 }
 async function showCommercialRegistry(type){
